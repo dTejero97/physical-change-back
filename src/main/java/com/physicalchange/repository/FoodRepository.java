@@ -1,0 +1,11 @@
+package com.physicalchange.repository;
+
+import com.physicalchange.domain.Food;
+import org.springframework.data.domain.*;
+import org.springframework.data.jpa.repository.*;
+import org.springframework.data.repository.query.Param;
+
+public interface FoodRepository extends JpaRepository<Food, Long> {
+    @Query("select f from Food f where :q is null or lower(f.name) like lower(concat('%', :q, '%'))")
+    Page<Food> search(@Param("q") String q, Pageable p);
+}

@@ -1,0 +1,25 @@
+server:
+  port: ${PORT:8080}
+spring:
+  application:
+    name: physical-change-back
+  datasource:
+    url: ${ORACLE_URL}
+    username: ${ORACLE_USER}
+    password: ${ORACLE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate   # el esquema lo gestionan los scripts de database/
+    open-in-view: false
+app:
+  jwt:
+    secret: ${JWT_SECRET}            # mínimo 32 caracteres
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:120}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  seed-password: ${SEED_PASSWORD:}   # si se define, fija la contraseña de los usuarios de prueba
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

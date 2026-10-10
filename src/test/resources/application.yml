@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:t;MODE=Oracle;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+app:
+  jwt:
+    secret: test-secret-test-secret-test-secret-123456
+    expiration-minutes: 10
+  cors:
+    allowed-origins: http://localhost:4200
+  seed-password: ""
