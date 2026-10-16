@@ -45,12 +45,12 @@ class SecurityIntegrationTest {
 
     @Test void loginCorrecto() throws Exception {
         mvc.perform(post("/api/auth/login").contentType("application/json")
-                .content("{\"email\":\"c1@test\",\"password\":\"Password1!\"}")).andExpect(status().isOk());
+                .content("{\"username\":\"c1@test\",\"password\":\"Password1!\"}")).andExpect(status().isOk());
     }
 
     @Test void loginIncorrectoEs401() throws Exception {
         mvc.perform(post("/api/auth/login").contentType("application/json")
-                .content("{\"email\":\"c1@test\",\"password\":\"mala\"}")).andExpect(status().isUnauthorized());
+                .content("{\"username\":\"c1@test\",\"password\":\"mala\"}")).andExpect(status().isUnauthorized());
     }
 
     @Test void clienteNoAccedeAEndpointsDeEntrenador() throws Exception {

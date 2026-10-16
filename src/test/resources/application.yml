@@ -1,8 +1,10 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:t;MODE=Oracle;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:t;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
     username: sa
     password:
+  flyway:
+    enabled: false          # en tests Hibernate crea el esquema; el SQL real se valida aparte
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -12,4 +14,6 @@ app:
     expiration-minutes: 10
   cors:
     allowed-origins: http://localhost:4200
-  seed-password: ""
+  admin:
+    email: admin
+    password: admin

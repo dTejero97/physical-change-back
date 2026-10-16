@@ -29,6 +29,17 @@ public class ClientService {
         return AuthService.toDto(users.findById(id).orElseThrow(() -> new NotFoundException("Cliente no encontrado")));
     }
 
+    /** Edita nombre y activa/desactiva el acceso de un cliente propio (o cualquiera si es ADMIN). */
+    @Transactional
+    public UserDto update(Long id, UpdateClientRequest r) {
+        access.assertCanAccessClient(id);
+        AppUser c = users.findById(id).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+        if (c.getRole() != Role.CLIENT) throw new NotFoundException("Cliente no encontrado");
+        c.setFullName(r.fullName());
+        c.setActive(r.active());
+        return AuthService.toDto(c);
+    }
+
     @Transactional
     public UserDto create(CreateClientRequest r) {
         if (users.findByEmailIgnoreCase(r.email()).isPresent()) throw new ConflictException("Email ya registrado");

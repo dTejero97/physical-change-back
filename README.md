@@ -1,22 +1,40 @@
 # physical-change-back
 
-API REST de Physical Change: Java 21, Spring Boot 3, Spring Security (JWT + BCrypt), Oracle.
-Arquitectura: Controller → Service → Repository → Oracle. DTOs, validación, paginación, Swagger y Actuator.
+API REST de Physical Change: Java 21, Spring Boot 3.3, Spring Security (JWT + BCrypt), **PostgreSQL** y **Flyway**.
+Arquitectura: Controller → Service → Repository → PostgreSQL, con DTOs (records), mappers (`mapper/`), utilidades (`util/`) y Swagger.
 
-## Desarrollo
-1. Crea el esquema Oracle: `cd database && sql user/pass@db @install/install_1.2.0.sql`
-2. Exporta las variables de `.env.example` (nunca subas `.env`). Define `SEED_PASSWORD` para activar los usuarios de prueba.
+## Desarrollo local
+1. Ten PostgreSQL 14+ en marcha y crea una base (`physicalchange`).
+2. Define las variables de `.env.example` (`SPRING_DATASOURCE_URL`, `JWT_SECRET`, etc.). Nunca subas `.env`.
 3. `mvn spring-boot:run` → http://localhost:8080/swagger-ui.html
-4. Tests: `mvn test` (H2 en modo Oracle, sin necesidad de Oracle real).
+4. Al arrancar, Flyway crea todas las tablas (`src/main/resources/db/migration/V1__init_schema.sql`) y se crea el usuario **admin** si no existe.
+5. Tests: `mvn test` (H2 en modo PostgreSQL; no necesitas base real).
 
-## Seguridad
-- JWT stateless; roles ADMIN / TRAINER / CLIENT.
-- `SecurityConfig`: reglas por ruta + `@PreAuthorize`. `AccessService`: propiedad de recursos (un cliente solo ve lo suyo; un entrenador solo sus clientes).
+## Base de datos
+- El esquema vive en `src/main/resources/db/migration/`. Cada versión es inmutable: un cambio nuevo = `V2__descripcion.sql`.
+- Hibernate está en `ddl-auto=validate`: comprueba que las entidades coinciden con las tablas.
+- En Render, `DATABASE_URL` (formato `postgres://`) se convierte automáticamente a JDBC (`DatabaseUrlEnvironmentPostProcessor`).
 
-## Producción (Render)
-Despliegue Docker con `render.yaml`. Define `ORACLE_URL`, `ORACLE_USER`, `ORACLE_PASSWORD`, `JWT_SECRET`, `CORS_ALLOWED_ORIGINS` (URL de Vercel) en el panel de Render.
+## Usuarios y seguridad
+- Roles: `ADMIN`, `TRAINER` (entrenador/nutricionista), `CLIENT`.
+- Login con email o con el usuario `admin`. Por defecto `ADMIN_USER=admin` y `ADMIN_PASSWORD=admin`: **cámbialo en Render** (la contraseña solo se aplica al crear el admin; después se cambia desde Configuración).
+- `SecurityConfig` aplica reglas por ruta; `AccessService` controla la propiedad de cada recurso (un cliente solo ve lo suyo; un entrenador solo a sus clientes).
 
-## Estado de módulos
-Implementados en API: auth, clientes, ejercicios, entrenamientos y asignaciones, seguimiento, progreso, citas/reservas, mensajes, dashboards y **nutrición** (servicio opcional del entrenador: alimentos, planes, comidas y macros).
-Esquema SQL ya creado (falta API): programas semanales, notificaciones, pagos, facturas, logros.
-Pendientes: fotos, documentos/formularios, comunidad, suscripciones, estadísticas de negocio, automatizaciones, equipos/centros, IA.
+## Módulos
+| Módulo | Endpoints principales |
+|---|---|
+| Auth y perfil | `POST /api/auth/login`, `GET/PUT /api/auth/me`, `PUT /api/auth/password` |
+| Clientes | `GET/POST /api/clients`, `PUT /api/clients/{id}` |
+| Ejercicios | `GET/POST /api/exercises`, `DELETE /api/exercises/{id}` |
+| Rutinas | `GET/POST /api/workouts`, `GET/PUT/DELETE /api/workouts/{id}`, ítems (series, reps, peso, descanso) en `/api/workouts/{id}/items` |
+| Asignación | `POST /api/workouts/assign`, `GET /api/my/assignments`, `POST /api/assignments/{id}/complete`, `GET /api/assignments/{id}/compliance` |
+| Registro de series | `POST /api/exercise-logs`, `GET /api/exercise-logs/client/{id}`, `DELETE /api/exercise-logs/{id}` |
+| Progreso | `GET /api/progress/strength/{clientId}` (fuerza por ejercicio y carga por músculo), `GET/POST /api/progress` (peso y grasa) |
+| Calendario y citas | `GET /api/calendar?from&to`, `GET/POST /api/appointments`, `DELETE /api/appointments/{id}` |
+| Pagos | `GET/POST /api/payments`, `POST /api/payments/{id}/paid`, `DELETE /api/payments/{id}` |
+| Nutrición | `PUT /api/nutrition/service`, alimentos, planes y comidas en `/api/nutrition/…` |
+| Informes | `GET /api/reports/trainer` |
+| Mensajes | `GET /api/messages/with/{userId}`, `POST /api/messages` |
+
+## Despliegue (Render)
+`render.yaml` crea la base PostgreSQL y el servicio Docker. Variables a rellenar en el panel: `ADMIN_PASSWORD` y `CORS_ALLOWED_ORIGINS` (URL de Vercel). `JWT_SECRET` se genera solo.

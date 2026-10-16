@@ -19,4 +19,10 @@ public class AuthController {
     @GetMapping("/me") public UserDto me() {
         return auth.profile(users.findById(access.current().id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado")));
     }
+
+    /** Configuración: cambiar el nombre visible. */
+    @PutMapping("/me") public UserDto updateMe(@Valid @RequestBody UpdateProfileRequest r) { return auth.updateProfile(r); }
+
+    /** Configuración: cambiar la contraseña (requiere la actual). */
+    @PutMapping("/password") public void changePassword(@Valid @RequestBody ChangePasswordRequest r) { auth.changePassword(r); }
 }
