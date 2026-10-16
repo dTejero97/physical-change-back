@@ -24,6 +24,7 @@ app:
   admin:
     email: ${ADMIN_USER:admin}          # usuario de acceso del administrador
     password: ${ADMIN_PASSWORD:admin}   # se aplica solo al crear el admin por primera vez
+    reset-password: ${ADMIN_RESET_PASSWORD:}   # si se define, fija la contraseña del admin en cada arranque (temporal)
 management:
   endpoints:
     web:

@@ -24,20 +24,36 @@ public class AdminSeedInitializer implements ApplicationRunner {
     private final PasswordEncoder encoder;
     private final String adminEmail;
     private final String adminPassword;
+    private final String resetPassword;
 
     public AdminSeedInitializer(UserRepository users, PasswordEncoder encoder,
                                 @Value("${app.admin.email}") String adminEmail,
-                                @Value("${app.admin.password}") String adminPassword) {
+                                @Value("${app.admin.password}") String adminPassword,
+                                @Value("${app.admin.reset-password:}") String resetPassword) {
         this.users = users;
         this.encoder = encoder;
         this.adminEmail = adminEmail.toLowerCase();
         this.adminPassword = adminPassword;
+        this.resetPassword = resetPassword;
     }
 
+    /**
+     * Crea el admin si no existe. Si ADMIN_RESET_PASSWORD está definida, fija esa contraseña
+     * en cada arranque: bórrala de Render cuando ya hayas entrado.
+     */
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (users.findByEmailIgnoreCase(adminEmail).isPresent()) return;
+        var existing = users.findByEmailIgnoreCase(adminEmail);
+        if (existing.isPresent()) {
+            if (resetPassword != null && !resetPassword.isBlank()) {
+                AppUser admin = existing.get();
+                admin.setPasswordHash(encoder.encode(resetPassword));
+                users.save(admin);
+                log.warn("Contraseña del administrador '{}' restablecida con ADMIN_RESET_PASSWORD. Quita esa variable de Render.", adminEmail);
+            }
+            return;
+        }
         AppUser admin = new AppUser();
         admin.setEmail(adminEmail);
         admin.setFullName("Administrador");
