@@ -16,5 +16,6 @@ public class ClientController {
     @GetMapping public Page<UserDto> list(Pageable p) { return svc.list(p); }
     @GetMapping("/{id}") public UserDto get(@PathVariable Long id) { return svc.get(id); }
     @PostMapping @ResponseStatus(HttpStatus.CREATED) public UserDto create(@Valid @RequestBody CreateClientRequest r) { return svc.create(r); }
+    @PutMapping("/{id}") public UserDto update(@PathVariable Long id, @Valid @RequestBody UpdateClientRequest r) { return svc.update(id, r); }
     @GetMapping("/{id}/assignments") public Page<AssignmentDto> assignments(@PathVariable Long id, Pageable p) { return workouts.forClient(id, p); }
 }

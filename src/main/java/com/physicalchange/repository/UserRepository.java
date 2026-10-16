@@ -9,6 +9,6 @@ import java.util.*;
 public interface UserRepository extends JpaRepository<AppUser, Long> {
     Optional<AppUser> findByEmailIgnoreCase(String email);
     Page<AppUser> findByRoleAndTrainerId(Role role, Long trainerId, Pageable p);
+    List<AppUser> findByRoleAndTrainerId(Role role, Long trainerId);
     Page<AppUser> findByRole(Role role, Pageable p);
-    List<AppUser> findByPasswordHash(String hash);
 }
