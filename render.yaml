@@ -1,10 +1,6 @@
-# Blueprint de Render: crea la base PostgreSQL y el servicio web (Docker) que la usa.
-databases:
-  - name: physical-change-db
-    databaseName: physical_change
-    user: physical_change
-    plan: free
-
+# Blueprint de Render para el backend.
+# La base PostgreSQL NO se crea aquí: la cuenta gratuita admite una sola base activa,
+# así que se reutiliza una existente y su URL se pega a mano en DATABASE_URL.
 services:
   - type: web
     name: physical-change-back
@@ -12,16 +8,13 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /actuator/health
     envVars:
-      # Render inyecta la URL de la base automáticamente (postgres://...)
-      - key: DATABASE_URL
-        fromDatabase:
-          name: physical-change-db
-          property: connectionString
+      - key: DATABASE_URL          # postgres://usuario:clave@host/base (la copias de tu base en Render)
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: ADMIN_USER
         value: admin
-      - key: ADMIN_PASSWORD        # pon aquí la contraseña del administrador
+      - key: ADMIN_PASSWORD        # contraseña del administrador
         sync: false
       - key: CORS_ALLOWED_ORIGINS  # URL de Vercel, p. ej. https://physical-change.vercel.app
         sync: false
