@@ -21,6 +21,11 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
     public void postProcessEnvironment(ConfigurableEnvironment env, SpringApplication app) {
         if (env.containsProperty("SPRING_DATASOURCE_URL")) return;
         String raw = env.getProperty("DATABASE_URL");
+        // Render define RENDER=true. Sin DATABASE_URL en Render, el arranque caería en localhost: mejor avisar claro.
+        if ((raw == null || raw.isBlank()) && env.containsProperty("RENDER")) {
+            throw new IllegalStateException("Falta DATABASE_URL en Render: en el servicio physical-change-back → Environment, "
+                    + "pega la URL de tu base PostgreSQL (postgresql://usuario:clave@host/base).");
+        }
         if (raw == null || !(raw.startsWith("postgres://") || raw.startsWith("postgresql://"))) return;
 
         URI uri = URI.create(raw);

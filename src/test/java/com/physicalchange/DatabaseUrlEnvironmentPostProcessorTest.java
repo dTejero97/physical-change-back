@@ -35,6 +35,11 @@ class DatabaseUrlEnvironmentPostProcessorTest {
         Assertions.assertNull(e.getProperty("spring.datasource.username"));
     }
 
+    @Test void enRenderSinUrlFallaConMensajeClaro() {
+        Assertions.assertThrows(IllegalStateException.class,
+                () -> env(Map.of("RENDER", "true", "DATABASE_URL", "")));
+    }
+
     @Test void ignoraValoresQueNoSonPostgres() {
         StandardEnvironment e = env(Map.of("DATABASE_URL", "mysql://u:p@host/db"));
         Assertions.assertNull(e.getProperty("spring.datasource.url"));
