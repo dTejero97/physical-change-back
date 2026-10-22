@@ -13,13 +13,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ClientService {
     private final UserRepository users; private final PasswordEncoder enc; private final AccessService access;
-    public ClientService(UserRepository u, PasswordEncoder e, AccessService a) { users = u; enc = e; access = a; }
+    private final ClientProfileService profiles;
+    public ClientService(UserRepository u, PasswordEncoder e, AccessService a, ClientProfileService p) { users = u; enc = e; access = a; profiles = p; }
 
+    /** Clientes del entrenador (todos si es ADMIN), sin los eliminados desde "Archivados". */
     @Transactional(readOnly = true)
     public Page<UserDto> list(Pageable p) {
         AuthUser me = access.current();
-        Page<AppUser> page = me.role() == Role.ADMIN ? users.findByRole(Role.CLIENT, p)
-                : users.findByRoleAndTrainerId(Role.CLIENT, me.id(), p);
+        Page<AppUser> page = me.role() == Role.ADMIN ? users.findAllVisibleClients(p) : users.findVisibleClients(me.id(), p);
         return page.map(AuthService::toDto);
     }
 
@@ -48,6 +49,8 @@ public class ClientService {
         u.setEmail(r.email().toLowerCase()); u.setFullName(r.fullName());
         u.setPasswordHash(enc.encode(r.password())); u.setRole(Role.CLIENT);
         u.setTrainerId(me.role() == Role.TRAINER ? me.id() : null);
-        return AuthService.toDto(users.save(u));
+        u = users.save(u);
+        profiles.onClientCreated(u.getId(), u.getTrainerId(), r.tagIds(), null);
+        return AuthService.toDto(u);
     }
 }

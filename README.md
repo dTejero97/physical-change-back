@@ -10,6 +10,8 @@ Arquitectura: Controller → Service → Repository → PostgreSQL, con DTOs (re
 4. Al arrancar, Flyway crea todas las tablas (`src/main/resources/db/migration/V1__init_schema.sql`) y se crea el usuario **admin** si no existe.
 5. Tests: `mvn test` (H2 en modo PostgreSQL; no necesitas base real).
 
+Contrato detallado de la sección Clientes: [`docs/api-clientes.md`](docs/api-clientes.md).
+
 ## Base de datos
 - El esquema vive en `src/main/resources/db/migration/`. Cada versión es inmutable: un cambio nuevo = `V2__descripcion.sql`.
 - Hibernate está en `ddl-auto=validate`: comprueba que las entidades coinciden con las tablas.
@@ -24,7 +26,11 @@ Arquitectura: Controller → Service → Repository → PostgreSQL, con DTOs (re
 | Módulo | Endpoints principales |
 |---|---|
 | Auth y perfil | `POST /api/auth/login`, `GET/PUT /api/auth/me`, `PUT /api/auth/password` |
-| Clientes | `GET/POST /api/clients`, `PUT /api/clients/{id}` |
+| Clientes | `GET/POST /api/clients`, `PUT /api/clients/{id}`, ficha: `GET /api/clients/profiles`, `PUT /api/clients/{id}/profile`, `DELETE /api/clients/{id}` (borrado lógico) |
+| Etiquetas | `GET/POST /api/tags`, `PUT/DELETE /api/tags/{id}`, asignación en `/api/tags/{id}/clients` |
+| Invitaciones | `GET/POST /api/invitations`, `POST /api/invitations/link`, `POST /api/invitations/{id}/resend`; públicas (sin JWT): `GET /api/public/invitations/{token}`, `POST .../accept` |
+| Leads | `GET/POST /api/leads`, `DELETE /api/leads/{id}`, `POST /api/leads/{id}/invite` |
+| Comunidad | `/api/community/groups` (CRUD), `/api/community/groups/{id}/posts`, `POST /api/community/posts/{id}/like` |
 | Ejercicios | `GET/POST /api/exercises`, `DELETE /api/exercises/{id}` |
 | Rutinas | `GET/POST /api/workouts`, `GET/PUT/DELETE /api/workouts/{id}`, ítems (series, reps, peso, descanso) en `/api/workouts/{id}/items` |
 | Asignación | `POST /api/workouts/assign`, `GET /api/my/assignments`, `POST /api/assignments/{id}/complete`, `GET /api/assignments/{id}/compliance` |

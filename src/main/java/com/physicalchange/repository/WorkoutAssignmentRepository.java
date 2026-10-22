@@ -16,6 +16,13 @@ public interface WorkoutAssignmentRepository extends JpaRepository<WorkoutAssign
     long countByClientIdAndCompletedDateIsNull(Long clientId);
     long countByWorkoutId(Long workoutId);
 
+    /** Asignaciones completadas de un workout por ciertos clientes (ranking de comunidad). */
+    List<WorkoutAssignment> findByWorkoutIdAndClientIdInAndCompletedDateIsNotNullOrderByCompletedDateAsc(Long workoutId, Collection<Long> clientIds);
+
+    /** Última rutina completada por cliente: filas [clientId, fecha]. */
+    @Query("select a.clientId, max(a.completedDate) from WorkoutAssignment a where a.clientId in :ids and a.completedDate is not null group by a.clientId")
+    List<Object[]> lastCompletedDates(@Param("ids") Collection<Long> clientIds);
+
     /** Asignaciones de las rutinas de un entrenador (la rutina es la que tiene el dueño). */
     @Query("select a from WorkoutAssignment a, Workout w where a.workoutId = w.id and w.trainerId = :t")
     List<WorkoutAssignment> findByTrainer(@Param("t") Long trainerId);

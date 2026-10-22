@@ -17,6 +17,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NotFoundException.class) ResponseEntity<ErrorResponse> nf(NotFoundException e) { return build(HttpStatus.NOT_FOUND, e.getMessage()); }
     @ExceptionHandler({ForbiddenException.class, AccessDeniedException.class}) ResponseEntity<ErrorResponse> fb(Exception e) { return build(HttpStatus.FORBIDDEN, e.getMessage()); }
     @ExceptionHandler(ConflictException.class) ResponseEntity<ErrorResponse> cf(ConflictException e) { return build(HttpStatus.CONFLICT, e.getMessage()); }
+    @ExceptionHandler(BadRequestException.class) ResponseEntity<ErrorResponse> br(BadRequestException e) { return build(HttpStatus.BAD_REQUEST, e.getMessage()); }
+    @ExceptionHandler(GoneException.class) ResponseEntity<ErrorResponse> gn(GoneException e) { return build(HttpStatus.GONE, e.getMessage()); }
+    /** Validación de parámetros de ruta (p. ej. formato del token de invitación). */
+    @ExceptionHandler({jakarta.validation.ConstraintViolationException.class,
+                       org.springframework.web.method.annotation.HandlerMethodValidationException.class})
+    ResponseEntity<ErrorResponse> param(Exception e) { return build(HttpStatus.BAD_REQUEST, "Parámetro no válido"); }
     @ExceptionHandler(BadCredentialsException.class) ResponseEntity<ErrorResponse> bc(BadCredentialsException e) { return build(HttpStatus.UNAUTHORIZED, "Credenciales inválidas"); }
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ErrorResponse> val(MethodArgumentNotValidException e) {
