@@ -148,7 +148,7 @@ public final class Dtos {
                                      @NotNull @Future LocalDateTime endAt, @Size(max = 200) String title) {}
     public record AppointmentDto(Long id, Long trainerId, Long clientId, LocalDateTime startAt,
                                  LocalDateTime endAt, String status, String title) {}
-    /** type: APPOINTMENT (cita) o WORKOUT (rutina asignada, día completo). */
+    /** type: APPOINTMENT (cita), WORKOUT (rutina asignada, día completo) o EVENT (sesión reservada; solo para CLIENT). */
     public record CalendarEventDto(String type, Long id, String title, LocalDateTime start, LocalDateTime end,
                                    Long clientId, String clientName, String status) {}
 
@@ -184,6 +184,112 @@ public final class Dtos {
     public record Totals(BigDecimal kcal, BigDecimal proteinG, BigDecimal carbsG, BigDecimal fatG) {}
     public record PlanDto(Long id, Long clientId, String name, Integer dailyKcal, String notes,
                           List<MealDto> meals, Totals totals) {}
+
+    // ---- Agenda (contrato en docs/api-agenda.md) ----
+    public static final String SESSION_COLORS = "#5B6CF0|#8B3FD1|#C2187A|#F49AC8|#F07A12|#E9D85A|#3FAE6A|#1F6B4F|#93ACD6";
+    static final String HTTPS_URL = "https://\\S+";
+    public record SessionTypeRequest(@NotBlank @Size(max = 60) String name, @NotNull @Pattern(regexp = "(?i)" + SESSION_COLORS) String color) {}
+    /** usage: eventos + horarios que usan el tipo (en uso si > 0). */
+    public record SessionTypeDto(Long id, String name, String color, LocalDateTime createdAt, long usage) {}
+    public record ReplaceSessionTypeRequest(@NotNull Long targetId) {}
+    public record ReplaceResultDto(int moved) {}
+
+    /** weekdays: 1 = lunes … 7 = domingo. */
+    public record RecurrenceRequest(@NotNull @Size(min = 1, max = 7) List<@NotNull @Min(1) @Max(7) Integer> weekdays, @NotNull LocalDate until) {}
+    public record EventRequest(@NotNull @Pattern(regexp = "SESSION|MEETING|REMINDER|PRIVATE") String kind,
+                               @NotBlank @Size(max = 120) String title, @Size(max = 16) String emoji,
+                               @Size(max = 2000) String description, @Pattern(regexp = "IN_PERSON|ONLINE") String mode,
+                               @Size(max = 200) String location, @Size(max = 500) @Pattern(regexp = HTTPS_URL) String meetingUrl,
+                               @Pattern(regexp = "BUSY|FREE") String showAs, Long sessionTypeId, @Size(max = 300) String cover,
+                               @NotNull LocalDate date, @NotNull LocalTime startTime, @NotNull LocalTime endTime,
+                               @Valid RecurrenceRequest recurrence, @Min(1) @Max(500) Integer capacity,
+                               @NotNull @Pattern(regexp = "NO|YES|TAGS") String bookable,
+                               @Size(max = 50) List<Long> bookableTagIds, @Size(max = 500) List<Long> clientIds) {}
+    public record EventDto(Long id, String kind, String title, String emoji, String description, String mode, String location,
+                           String meetingUrl, String showAs, Long sessionTypeId, String sessionTypeName, String color,
+                           String cover, String coverUrl, LocalDateTime start, LocalDateTime end, boolean recurrent,
+                           String seriesKey, Integer capacity, long booked, long waitlist, String bookable,
+                           List<Long> bookableTagIds, Long organizerId, String organizerName) {}
+    public record BookingDto(Long id, Long eventId, Long clientId, String clientName, String status, LocalDateTime createdAt) {}
+    public record EventDetailDto(EventDto event, List<BookingDto> bookings) {}
+    public record BookingRequest(@NotNull Long clientId) {}
+    public record BookingStatusRequest(@NotNull @Pattern(regexp = "BOOKED|CANCELLED|ATTENDED|NO_SHOW") String status) {}
+    /** Solo eventos SESSION. booked = BOOKED + ATTENDED + NO_SHOW; vouchersRedeemed = 0 hasta que existan bonos. */
+    public record AgendaStatsDto(long totalSessions, long inPerson, long online, long booked, long cancelled, long waitlist,
+                                 long attended, int attendancePct, long vouchersRedeemed) {}
+    public record BirthdayDto(Long clientId, String name, LocalDate date) {}
+
+    public record SlotDto(@NotNull @Min(1) @Max(7) Integer weekday, @NotNull LocalTime from, @NotNull LocalTime to) {}
+    public record ScheduleRequest(@NotBlank @Size(max = 120) String title, @Size(max = 16) String emoji,
+                                  @NotNull @Pattern(regexp = "IN_PERSON|ONLINE") String mode, @Pattern(regexp = "VIDEO|PHONE") String source,
+                                  @Size(max = 500) @Pattern(regexp = HTTPS_URL) String meetingUrl, @Size(max = 200) String location,
+                                  @NotNull Long sessionTypeId, @Size(max = 2000) String description, @NotBlank @Size(max = 300) String cover,
+                                  @NotNull LocalDate startDate, @NotNull LocalDate endDate, @NotNull @Min(10) @Max(240) Integer durationMin,
+                                  @NotNull @Size(min = 1, max = 50) List<@Valid @NotNull SlotDto> slots,
+                                  @NotNull @Pattern(regexp = "ALL|TAGS") String visibility, @Size(max = 50) List<Long> tagIds) {}
+    public record ScheduleDto(Long id, String title, String emoji, String mode, String source, String meetingUrl, String location,
+                              Long sessionTypeId, String sessionTypeName, String color, String description, String cover, String coverUrl,
+                              LocalDate startDate, LocalDate endDate, Integer durationMin, List<SlotDto> slots, String visibility,
+                              List<Long> tagIds, boolean active, Long organizerId, String organizerName, LocalDateTime createdAt) {}
+    public record ScheduleDetailDto(ScheduleDto schedule, List<MemberDto> availableFor) {}
+    public record ActiveRequest(boolean active) {}
+    public record ActivityDto(Long id, LocalDateTime at, Long actorId, String actorName, String actorKind, String action,
+                              String eventTitle, String eventEmoji, LocalDateTime eventStart, boolean recurrent) {}
+
+    // ---- Librería V2 (contrato en docs/api-libreria-v2.md) ----
+    public record FileDto(Long id, String name, String contentType, long size, String url) {}
+
+    public record ProgramItemRequest(@NotNull @Min(1) @Max(52) Integer week, @NotNull @Min(1) @Max(7) Integer day,
+                                     @NotNull @Pattern(regexp = "WORKOUT|CARDIO|VIDEO|NUTRITION_PLAN|NOTE") String kind,
+                                     Long refId, @NotBlank @Size(max = 160) String title) {}
+    public record ProgramRequest(@NotBlank @Size(max = 120) String name, @Size(max = 2000) String description,
+                                 @NotNull @Min(1) @Max(52) Integer weeks, Long linkedProgramId, boolean archiveClient,
+                                 @NotNull @Size(max = 500) List<@Valid @NotNull ProgramItemRequest> items) {}
+    /** automated = tiene programa enlazado o archiva al cliente al terminar. */
+    public record ProgramDto(Long id, String name, String description, int weeks, Long linkedProgramId, String linkedProgramName,
+                             boolean archiveClient, boolean automated, long itemCount, String creatorName,
+                             LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    public record ProgramItemDto(Long id, int week, int day, String kind, Long refId, String title, int position) {}
+    public record ProgramDetailDto(ProgramDto program, List<ProgramItemDto> items) {}
+
+    public record DocumentRequest(@NotBlank @Size(max = 160) String name, @Size(max = 2000) String description,
+                                  @NotNull @Pattern(regexp = "HIDDEN|ALL|TAGS") String visibility,
+                                  @Size(max = 50) List<Long> tagIds, @NotNull Long fileId) {}
+    public record DocumentDto(Long id, String name, String description, String visibility, List<Long> tagIds, Long fileId,
+                              String fileName, String contentType, long size, String url, String creatorName, LocalDateTime createdAt) {}
+
+    static final String QUESTION_KINDS = "SHORT_TEXT|LONG_TEXT|NUMBER|SINGLE|MULTIPLE|SCALE|DATE";
+    public record QuestionRequest(@NotNull @Pattern(regexp = QUESTION_KINDS) String kind, @NotBlank @Size(max = 300) String label,
+                                  boolean required, @Size(max = 20) List<@NotBlank @Size(max = 120) String> options) {}
+    public record FormRequest(@NotBlank @Size(max = 160) String name, @Size(max = 2000) String description, boolean autoSend,
+                              @NotNull @Size(max = 100) List<@Valid @NotNull QuestionRequest> questions) {}
+    public record QuestionDto(Long id, String kind, String label, boolean required, List<String> options) {}
+    public record FormDto(Long id, String name, String description, boolean autoSend, long questionCount, String creatorName,
+                          LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    public record FormDetailDto(FormDto form, List<QuestionDto> questions) {}
+
+    public record TemplateItemDto(Long id, String name, String description, String detail) {}
+    public record PackDto(Long id, String kind, String name, String description, String cover, List<TemplateItemDto> items) {}
+    public record CopyResultDto(String kind, Long id, String name) {}
+
+    public record CategoryRequest(@NotBlank @Size(max = 80) String name, @Size(max = 500) String description,
+                                  @NotNull @Pattern(regexp = "ALL|TAGS|HIDDEN") String visibility, @Size(max = 50) List<Long> tagIds) {}
+    public record AchievementRequest(@NotNull Long categoryId, @NotBlank @Size(max = 80) String name, @Size(max = 500) String description,
+                                     Long badgeFileId,
+                                     @NotNull @Pattern(regexp = "WEIGHT_EXERCISE|TOTAL_REPS|STREAK|BODY_WEIGHT|TIME_WITH_YOU") String conditionType,
+                                     Long exerciseId, @DecimalMin("1") @DecimalMax("1000") BigDecimal weightKg,
+                                     @Min(1) @Max(100000) Integer reps, @Min(2) @Max(365) Integer days,
+                                     @DecimalMin("20") @DecimalMax("500") BigDecimal targetKg, @Min(1) @Max(120) Integer months,
+                                     @NotNull @Pattern(regexp = "UNLIMITED|DATE_RANGE|AFTER_ASSIGNMENT") String durationType,
+                                     LocalDate startDate, LocalDate endDate, @Min(1) @Max(365) Integer daysAfter) {}
+    public record AchievementDto(Long id, Long categoryId, String name, String description, String groupLabel, String badge,
+                                 Long badgeFileId, String badgeUrl, String tier, String conditionType, Long exerciseId, String exerciseName,
+                                 BigDecimal weightKg, Integer reps, Integer days, BigDecimal targetKg, Integer months,
+                                 String durationType, LocalDate startDate, LocalDate endDate, Integer daysAfter,
+                                 boolean system, boolean hidden, LocalDateTime createdAt) {}
+    public record CategoryDto(Long id, String name, String description, String icon, boolean system, String visibility,
+                              List<Long> tagIds, LocalDateTime createdAt, List<AchievementDto> achievements) {}
+    public record HiddenRequest(boolean hidden) {}
 
     public record ErrorResponse(Instant timestamp, int status, String error, String message) {}
 }

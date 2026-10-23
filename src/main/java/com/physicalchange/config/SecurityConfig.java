@@ -28,7 +28,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login", "/api/public/**", "/actuator/health", "/actuator/info",
                                  "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .requestMatchers("/api/clients/**", "/api/workouts/**", "/api/reports/**").hasAnyRole("ADMIN", "TRAINER")
+                .requestMatchers("/api/clients/**", "/api/workouts/**", "/api/reports/**", "/api/library/**", "/api/files/**").hasAnyRole("ADMIN", "TRAINER")
                 .anyRequest().authenticated())
             .addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class);
         return http.build();

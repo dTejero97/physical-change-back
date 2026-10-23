@@ -19,10 +19,11 @@ public class CalendarService {
     private final WorkoutRepository workouts;
     private final UserRepository users;
     private final AccessService access;
+    private final AgendaEventService agenda;
 
     public CalendarService(AppointmentRepository a, WorkoutAssignmentRepository w, WorkoutRepository wo,
-                           UserRepository u, AccessService ac) {
-        appointments = a; assignments = w; workouts = wo; users = u; access = ac;
+                           UserRepository u, AccessService ac, AgendaEventService ag) {
+        appointments = a; assignments = w; workouts = wo; users = u; access = ac; agenda = ag;
     }
 
     @Transactional(readOnly = true)
@@ -38,6 +39,8 @@ public class CalendarService {
                 Workout w = workouts.findById(a.getWorkoutId()).orElseThrow();
                 out.add(CalendarMapper.fromAssignment(a, w, nameOf(names, a.getClientId())));
             }
+            // Sesiones de la agenda con plaza (docs/api-agenda.md, compatibilidad).
+            agenda.bookedByClient(me.id(), from, to).forEach(e -> out.add(CalendarMapper.fromEvent(e, me.id(), nameOf(names, me.id()))));
         } else {
             appointments.findByTrainerIdAndStartAtBetween(me.id(), DateTimes.startOfDay(from), DateTimes.endExclusive(to))
                     .forEach(a -> out.add(CalendarMapper.fromAppointment(a, nameOf(names, a.getClientId()))));

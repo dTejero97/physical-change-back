@@ -1,6 +1,7 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:t;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    # NON_KEYWORDS: columnas "day"/"week" (library_program_item) son palabras reservadas en H2, no en PostgreSQL.
+    url: jdbc:h2:mem:t;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;NON_KEYWORDS=DAY,WEEK
     username: sa
     password:
   flyway:

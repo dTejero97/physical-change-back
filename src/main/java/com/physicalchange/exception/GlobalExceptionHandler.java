@@ -29,5 +29,20 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, e.getBindingResult().getFieldErrors().stream()
                 .map(f -> f.getField() + ": " + f.getDefaultMessage()).collect(Collectors.joining("; ")));
     }
+    /** Archivos de más de 10 MB (ADR-001): lo corta el servidor o el propio servicio. */
+    @ExceptionHandler({PayloadTooLargeException.class, org.springframework.web.multipart.MaxUploadSizeExceededException.class})
+    ResponseEntity<ErrorResponse> big(Exception e) { return build(HttpStatus.PAYLOAD_TOO_LARGE, "El archivo supera los 10 MB"); }
+    /** Errores del cliente que antes acababan en 500 (propuesta de QA). */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ErrorResponse> method(Exception e) { return build(HttpStatus.METHOD_NOT_ALLOWED, "Método no permitido"); }
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ErrorResponse> media(Exception e) { return build(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Tipo de contenido no soportado"); }
+    @ExceptionHandler({org.springframework.http.converter.HttpMessageNotReadableException.class,
+                       org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+                       org.springframework.web.bind.MissingServletRequestParameterException.class,
+                       org.springframework.web.multipart.support.MissingServletRequestPartException.class})
+    ResponseEntity<ErrorResponse> unreadable(Exception e) { return build(HttpStatus.BAD_REQUEST, "Petición no válida"); }
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    ResponseEntity<ErrorResponse> noRoute(Exception e) { return build(HttpStatus.NOT_FOUND, "Recurso no encontrado"); }
     @ExceptionHandler(Exception.class) ResponseEntity<ErrorResponse> other(Exception e) { return build(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno"); }
 }

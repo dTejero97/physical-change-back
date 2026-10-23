@@ -41,6 +41,13 @@ Contrato detallado de la sección Clientes: [`docs/api-clientes.md`](docs/api-cl
 | Nutrición | `PUT /api/nutrition/service`, alimentos, planes y comidas en `/api/nutrition/…` |
 | Informes | `GET /api/reports/trainer` |
 | Mensajes | `GET /api/messages/with/{userId}`, `POST /api/messages` |
+| Agenda | Tipos de sesión, eventos (sesión, reunión, recordatorio, privado; series recurrentes), reservas y cola, KPIs, cumpleaños, horarios de citas y actividad en `/api/agenda/…`. Contrato: [docs/api-agenda.md](docs/api-agenda.md) |
+| Librería V2 | Programas, documentos, formularios, plantillas (copiar a mi librería) y logros en `/api/library/…`. Contrato: [docs/api-libreria-v2.md](docs/api-libreria-v2.md) |
+| Archivos | `POST /api/files` (multipart, máx. 10 MB, cuota 50 MB), `DELETE /api/files/{id}`; descarga sin JWT con URL firmada `GET /api/public/files/{id}?exp&sig` (1 h). Decisión: `../docs/adr/ADR-001-almacenamiento-archivos.md` |
+
+Migraciones de esta versión: `V3__agenda.sql` y `V4__libreria_v2.sql` (catálogo del sistema: 46 logros y 13 plantillas). Cada una lleva su reversión manual en la cabecera.
+Tests: `mvn test` (H2 en modo PostgreSQL). H2 no reproduce todas las diferencias con PostgreSQL: valida también arrancando contra la base local (`ddl-auto=validate`).
 
 ## Despliegue (Render)
 `render.yaml` crea la base PostgreSQL y el servicio Docker. Variables a rellenar en el panel: `ADMIN_PASSWORD` y `CORS_ALLOWED_ORIGINS` (URL de Vercel). `JWT_SECRET` se genera solo.
+`JWT_SECRET` también firma las URLs de descarga de archivos: si se rota, los enlaces emitidos dejan de valer (caducan en 1 h de todas formas). Los archivos se guardan en PostgreSQL porque el disco de Render es efímero (ADR-001).
