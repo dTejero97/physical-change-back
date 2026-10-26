@@ -43,11 +43,23 @@ Contrato detallado de la sección Clientes: [`docs/api-clientes.md`](docs/api-cl
 | Mensajes | `GET /api/messages/with/{userId}`, `POST /api/messages` |
 | Agenda | Tipos de sesión, eventos (sesión, reunión, recordatorio, privado; series recurrentes), reservas y cola, KPIs, cumpleaños, horarios de citas y actividad en `/api/agenda/…`. Contrato: [docs/api-agenda.md](docs/api-agenda.md) |
 | Librería V2 | Programas, documentos, formularios, plantillas (copiar a mi librería) y logros en `/api/library/…`. Contrato: [docs/api-libreria-v2.md](docs/api-libreria-v2.md) |
-| Archivos | `POST /api/files` (multipart, máx. 10 MB, cuota 50 MB), `DELETE /api/files/{id}`; descarga sin JWT con URL firmada `GET /api/public/files/{id}?exp&sig` (1 h). Decisión: `../docs/adr/ADR-001-almacenamiento-archivos.md` |
+| Archivos | `POST /api/files` (multipart, máx. 10 MB), subida directa a Cloudflare R2 `POST /api/files/uploads` + `POST /api/files/{id}/complete` (vídeos de hasta 500 MB), `DELETE /api/files/{id}`; descarga sin JWT con URL firmada `GET /api/public/files/{id}?exp&sig` (1 h; los archivos de R2 responden 302). Decisiones: `../docs/adr/ADR-001-almacenamiento-archivos.md` y `../docs/adr/ADR-005-cloudflare-r2.md` |
 
-Migraciones de esta versión: `V3__agenda.sql` y `V4__libreria_v2.sql` (catálogo del sistema: 46 logros y 13 plantillas). Cada una lleva su reversión manual en la cabecera.
+Migraciones de esta versión: `V3__agenda.sql`, `V4__libreria_v2.sql` (catálogo del sistema: 46 logros y 13 plantillas) y `V5__almacenamiento_r2.sql`. Cada una lleva su reversión manual en la cabecera.
 Tests: `mvn test` (H2 en modo PostgreSQL). H2 no reproduce todas las diferencias con PostgreSQL: valida también arrancando contra la base local (`ddl-auto=validate`).
 
 ## Despliegue (Render)
 `render.yaml` crea la base PostgreSQL y el servicio Docker. Variables a rellenar en el panel: `ADMIN_PASSWORD` y `CORS_ALLOWED_ORIGINS` (URL de Vercel). `JWT_SECRET` se genera solo.
-`JWT_SECRET` también firma las URLs de descarga de archivos: si se rota, los enlaces emitidos dejan de valer (caducan en 1 h de todas formas). Los archivos se guardan en PostgreSQL porque el disco de Render es efímero (ADR-001).
+`JWT_SECRET` también firma las URLs de descarga de archivos: si se rota, los enlaces emitidos dejan de valer (caducan en 1 h de todas formas). El disco de Render es efímero, así que los archivos nunca se guardan en el contenedor.
+
+### Almacenamiento de archivos
+| Variable | Valor | Para qué |
+|---|---|---|
+| `STORAGE_TYPE` | vacía o `database` (por defecto) \| `r2` | Dónde se guardan los archivos **nuevos**: PostgreSQL (ADR-001) o Cloudflare R2 (ADR-005) |
+| `STORAGE_QUOTA_MB` | número, opcional | Cuota por profesional. Vacía = 50 con `database`, 2048 con `r2` |
+| `R2_ACCOUNT_ID` | ID de cuenta de Cloudflare | Forma el endpoint `https://<id>.r2.cloudflarestorage.com` |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | token de R2 "Object Read & Write" (**secretos**) | Credenciales S3 |
+| `R2_BUCKET` | p. ej. `physical-change-files` | Si tiene valor, se carga el cliente de R2 (aunque `STORAGE_TYPE=database`) para seguir sirviendo los archivos ya guardados allí |
+| `R2_ENDPOINT` | opcional | Sustituye al endpoint por defecto (p. ej. buckets de la UE: `https://<id>.eu.r2.cloudflarestorage.com`) |
+
+Si `R2_BUCKET` tiene valor y falta otra variable `R2_*`, el backend no arranca y dice cuál falta. Cada archivo recuerda dónde está (`stored_file.storage`), así que conviven los de PostgreSQL y los de R2. Alta en Cloudflare paso a paso: `../MANUAL-DESPLIEGUE.md`, Parte 8.

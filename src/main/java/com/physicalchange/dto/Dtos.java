@@ -238,6 +238,10 @@ public final class Dtos {
 
     // ---- Librería V2 (contrato en docs/api-libreria-v2.md) ----
     public record FileDto(Long id, String name, String contentType, long size, String url) {}
+    /** Subida directa a R2 (ADR-005). purpose: DOCUMENT | IMAGE | VIDEO. */
+    public record UploadRequest(@NotBlank @Size(max = 200) String name, @NotBlank String purpose, @Positive long sizeBytes) {}
+    /** El navegador hace un PUT a uploadUrl con estas cabeceras y después llama a /api/files/{fileId}/complete. */
+    public record UploadDto(Long fileId, String uploadUrl, String method, java.util.Map<String, String> headers, Instant expiresAt) {}
 
     public record ProgramItemRequest(@NotNull @Min(1) @Max(52) Integer week, @NotNull @Min(1) @Max(7) Integer day,
                                      @NotNull @Pattern(regexp = "WORKOUT|CARDIO|VIDEO|NUTRITION_PLAN|NOTE") String kind,

@@ -3,7 +3,10 @@ package com.physicalchange.domain;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-/** Metadatos de un archivo subido (ADR-001). El contenido está en StoredFileData. purpose: DOCUMENT | IMAGE. */
+/**
+ * Metadatos de un archivo subido (ADR-001, ADR-005). purpose: DOCUMENT | IMAGE | VIDEO.
+ * storage: DB (contenido en StoredFileData) | R2 (bucket). status: PENDING mientras se sube directo a R2 | READY.
+ */
 @Entity
 @Table(name = "STORED_FILE")
 public class StoredFile {
@@ -15,6 +18,8 @@ public class StoredFile {
     @Column(name = "SIZE_BYTES", nullable = false) private Long sizeBytes;
     @Column(nullable = false, length = 10) private String purpose;
     @Column(name = "CREATED_AT", nullable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Column(nullable = false, length = 10) private String storage = "DB";
+    @Column(nullable = false, length = 10) private String status = "READY";
 
     public Long getId() { return id; }
     public Long getOwnerId() { return ownerId; }
@@ -28,4 +33,8 @@ public class StoredFile {
     public String getPurpose() { return purpose; }
     public void setPurpose(String p) { this.purpose = p; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public String getStorage() { return storage; }
+    public void setStorage(String s) { this.storage = s; }
+    public String getStatus() { return status; }
+    public void setStatus(String s) { this.status = s; }
 }

@@ -17,7 +17,7 @@ spring:
     open-in-view: false
   servlet:
     multipart:
-      max-file-size: 10MB      # ADR-001: límite por archivo
+      max-file-size: 10MB      # ADR-001: límite por archivo (los vídeos van directos a R2, ADR-005)
       max-request-size: 11MB
 app:
   jwt:
@@ -25,6 +25,16 @@ app:
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:120}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  storage:
+    type: ${STORAGE_TYPE:database}          # database (ADR-001) | r2 (Cloudflare R2, ADR-005)
+    quota-mb: ${STORAGE_QUOTA_MB:}          # vacío = 50 MB con database, 2048 MB con r2
+    global-max-mb: ${STORAGE_GLOBAL_MAX_MB:}   # tope de toda la plataforma; vacío = 9216 MB con r2 (plan gratuito: 10 GB), sin tope con database
+    r2:
+      account-id: ${R2_ACCOUNT_ID:}         # ID de cuenta de Cloudflare
+      access-key-id: ${R2_ACCESS_KEY_ID:}   # secreto
+      secret-access-key: ${R2_SECRET_ACCESS_KEY:}   # secreto
+      bucket: ${R2_BUCKET:}                 # p. ej. physical-change-files
+      endpoint: ${R2_ENDPOINT:}             # vacío = https://<account-id>.r2.cloudflarestorage.com
   admin:
     email: ${ADMIN_USER:admin}          # usuario de acceso del administrador
     password: ${ADMIN_PASSWORD:admin}   # se aplica solo al crear el admin por primera vez
