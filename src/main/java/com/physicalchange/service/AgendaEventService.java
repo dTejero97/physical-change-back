@@ -32,10 +32,13 @@ public class AgendaEventService {
     private final ClientProfileRepository profiles;
     private final ClientDirectory directory;
     private final AccessService access;
+    private final BonusService bonusService;
 
     public AgendaEventService(AgendaEventRepository e, AgendaBookingRepository b, SessionTypeService t, AgendaActivityService a,
-                              FileService f, TagRefs tr, UserRepository u, ClientProfileRepository p, ClientDirectory d, AccessService ac) {
+                              FileService f, TagRefs tr, UserRepository u, ClientProfileRepository p, ClientDirectory d, AccessService ac,
+                              BonusService bs) {
         events = e; bookings = b; types = t; activity = a; files = f; tags = tr; users = u; profiles = p; directory = d; access = ac;
+        bonusService = bs;
     }
 
     /** Filtros opcionales de la lista y de los KPIs (vacío o nulo = sin filtrar). */
@@ -67,13 +70,14 @@ public class AgendaEventService {
     public AgendaStatsDto stats(LocalDate from, LocalDate to, Filters f) {
         List<AgendaEvent> sessions = range(from, to, f).stream().filter(e -> "SESSION".equals(e.getKind())).toList();
         long inPerson = sessions.stream().filter(e -> "IN_PERSON".equals(e.getMode())).count();
-        Map<String, Long> byStatus = sessions.isEmpty() ? Map.of() : bookings.findByEventIdIn(sessions.stream().map(AgendaEvent::getId).toList())
-                .stream().collect(Collectors.groupingBy(AgendaBooking::getStatus, Collectors.counting()));
+        List<AgendaBooking> all = sessions.isEmpty() ? List.of() : bookings.findByEventIdIn(sessions.stream().map(AgendaEvent::getId).toList());
+        Map<String, Long> byStatus = all.stream().collect(Collectors.groupingBy(AgendaBooking::getStatus, Collectors.counting()));
+        long vouchers = bonusService.redeemedIn(all.stream().map(AgendaBooking::getId).toList());
         long attended = byStatus.getOrDefault("ATTENDED", 0L);
         long booked = byStatus.getOrDefault("BOOKED", 0L) + attended + byStatus.getOrDefault("NO_SHOW", 0L);
         int pct = booked == 0 ? 0 : (int) Math.round(attended * 100.0 / booked);
         return new AgendaStatsDto(sessions.size(), inPerson, sessions.size() - inPerson, booked,
-                byStatus.getOrDefault("CANCELLED", 0L), byStatus.getOrDefault("WAITLIST", 0L), attended, pct, 0);
+                byStatus.getOrDefault("CANCELLED", 0L), byStatus.getOrDefault("WAITLIST", 0L), attended, pct, vouchers);
     }
 
     /** Cumpleaños de los clientes activos del profesional en el rango (29-feb cae el 28 en años no bisiestos). */
@@ -128,6 +132,7 @@ public class AgendaEventService {
                 b.setClientId(c);
                 b.setStatus(hasSeat(e) ? "BOOKED" : "WAITLIST");
                 bookings.saveAndFlush(b);
+                if ("BOOKED".equals(b.getStatus())) bonusService.redeem(b, e);
             }
             created.add(e);
         }
@@ -146,7 +151,7 @@ public class AgendaEventService {
             apply(t, r, e.getTrainerId());
             t.setStartAt(day.atTime(r.startTime()));
             t.setEndAt(day.atTime(r.endTime()));
-            if (!"SESSION".equals(t.getKind())) bookings.deleteByEventId(t.getId());
+            if (!"SESSION".equals(t.getKind())) { releaseBonuses(t); bookings.deleteByEventId(t.getId()); }
         }
         activity.log(e, "EVENT_UPDATED");
         return toDtos(targets);
@@ -157,6 +162,7 @@ public class AgendaEventService {
         AgendaEvent e = owned(id);
         activity.log(e, "EVENT_DELETED");
         for (AgendaEvent t : targets(e, scope)) {
+            releaseBonuses(t);
             bookings.deleteByEventId(t.getId());
             events.delete(t);
         }
@@ -177,6 +183,7 @@ public class AgendaEventService {
         if (b == null) { b = new AgendaBooking(); b.setEventId(eventId); b.setClientId(r.clientId()); }
         b.setStatus(hasSeat(e) ? "BOOKED" : "WAITLIST");
         b = bookings.saveAndFlush(b);
+        if ("BOOKED".equals(b.getStatus())) bonusService.redeem(b, e);
         activity.log(e, "BOOKED".equals(b.getStatus()) ? "BOOKED" : "WAITLISTED");
         return toDto(b, new HashMap<>());
     }
@@ -198,7 +205,8 @@ public class AgendaEventService {
         if (OCCUPY.contains(r.status()) && !OCCUPY.contains(old) && !hasSeat(e)) throw new ConflictException("No quedan plazas en esta sesión");
         b.setStatus(r.status());
         bookings.saveAndFlush(b);
-        if (OCCUPY.contains(old) && !OCCUPY.contains(r.status())) promote(e);
+        if (OCCUPY.contains(r.status()) && !OCCUPY.contains(old)) bonusService.redeem(b, e);
+        if (OCCUPY.contains(old) && !OCCUPY.contains(r.status())) { bonusService.release(b, e); promote(e); }
         activity.log(e, switch (r.status()) {
             case "CANCELLED" -> "BOOKING_CANCELLED";
             case "ATTENDED" -> "ATTENDED";
@@ -294,6 +302,11 @@ public class AgendaEventService {
         if (e.getStartAt().isBefore(LocalDateTime.now())) throw new BadRequestException("La sesión ya ha empezado");
     }
 
+    /** Al borrar una sesión futura (o dejar de ser sesión), sus reservas devuelven las sesiones de bono. */
+    private void releaseBonuses(AgendaEvent e) {
+        for (AgendaBooking b : bookings.findByEventIdIn(List.of(e.getId()))) bonusService.release(b, e);
+    }
+
     private boolean hasSeat(AgendaEvent e) {
         return e.getCapacity() == null || bookings.countByEventIdAndStatusIn(e.getId(), OCCUPY) < e.getCapacity();
     }
@@ -303,6 +316,7 @@ public class AgendaEventService {
         bookings.findFirstByEventIdAndStatusOrderByCreatedAtAscIdAsc(e.getId(), "WAITLIST").ifPresent(w -> {
             w.setStatus("BOOKED");
             bookings.saveAndFlush(w);
+            bonusService.redeem(w, e);
         });
     }
 

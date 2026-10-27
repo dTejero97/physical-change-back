@@ -35,6 +35,16 @@ app:
       secret-access-key: ${R2_SECRET_ACCESS_KEY:}   # secreto
       bucket: ${R2_BUCKET:}                 # p. ej. physical-change-files
       endpoint: ${R2_ENDPOINT:}             # vacío = https://<account-id>.r2.cloudflarestorage.com
+  ai:                                       # Physical AI (ADR-003)
+    provider: ${AI_PROVIDER:none}           # none (los endpoints responden 503) | workers-ai
+    account-id: ${CF_ACCOUNT_ID:}           # vacío = R2_ACCOUNT_ID (misma cuenta de Cloudflare)
+    api-token: ${CF_AI_API_TOKEN:}          # secreto: Workers AI Read + Edit
+    model: ${AI_MODEL:@cf/meta/llama-3.3-70b-instruct-fp8-fast}
+    monthly-credits: ${AI_MONTHLY_CREDITS:6}
+    daily-neuron-budget: ${AI_DAILY_NEURON_BUDGET:9000}
+    chat-daily-limit: ${AI_CHAT_DAILY_LIMIT:30}
+    neurons-per-m-input: ${AI_NEURONS_PER_M_INPUT:26668}     # tabla de precios del modelo 70B (ADR-003)
+    neurons-per-m-output: ${AI_NEURONS_PER_M_OUTPUT:204805}
   admin:
     email: ${ADMIN_USER:admin}          # usuario de acceso del administrador
     password: ${ADMIN_PASSWORD:admin}   # se aplica solo al crear el admin por primera vez

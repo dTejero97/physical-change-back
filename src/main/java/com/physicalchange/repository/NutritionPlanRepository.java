@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface NutritionPlanRepository extends JpaRepository<NutritionPlan, Long> {
     List<NutritionPlan> findByClientIdOrderByIdDesc(Long clientId);
+    List<NutritionPlan> findByClientIdIn(java.util.Collection<Long> clientIds);
 }

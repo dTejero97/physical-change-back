@@ -11,4 +11,9 @@ public final class DateTimes {
 
     /** Primer instante del día siguiente: sirve como límite superior exclusivo. */
     public static LocalDateTime endExclusive(LocalDate d) { return d.plusDays(1).atStartOfDay(); }
+
+    /** 21/10/2026, para textos que ve el usuario. */
+    public static String ddMMyyyy(LocalDate d) {
+        return String.format("%02d/%02d/%d", d.getDayOfMonth(), d.getMonthValue(), d.getYear());
+    }
 }

@@ -63,11 +63,12 @@ public final class Dtos {
 
     // ---- Clientes: invitaciones ----
     public record InvitationRequest(@Email @NotBlank @Size(max = 160) String email, @NotBlank @Size(max = 120) String name,
-                                    Long tagId, @Size(max = 120) String planName) {}
-    public record InvitationLinkRequest(Long tagId) {}
+                                    Long tagId, @Size(max = 120) String planName, Long planId) {}
+    /** planId: plan de suscripción propio; al aceptar se crea la suscripción desde ese día (ADR-004 §4). */
+    public record InvitationLinkRequest(Long tagId, Long planId) {}
     /** email/name nulos = enlace genérico. El enlace del front es <origen>/invitacion/<token>. */
     public record InvitationDto(Long id, String email, String name, Long tagId, String planName, String token,
-                                LocalDateTime invitedAt, LocalDateTime expiresAt) {}
+                                LocalDateTime invitedAt, LocalDateTime expiresAt, Long planId) {}
     public record PublicInvitationDto(String trainerName, String email, String name, boolean expired) {}
     /** email solo es obligatorio en los enlaces genéricos (en las invitaciones por email se usa el invitado). */
     public record AcceptInvitationRequest(@NotBlank @Size(max = 120) String fullName, @Email @Size(max = 160) String email,
@@ -161,6 +162,134 @@ public final class Dtos {
                                  @NotBlank @Size(max = 160) String concept, @NotNull LocalDate dueDate) {}
     public record PaymentDto(Long id, Long trainerId, Long clientId, String clientName, BigDecimal amount, String concept,
                              LocalDate dueDate, LocalDate paidDate, String status, boolean overdue) {}
+
+    // ---- Negocio: comprobantes (contrato en docs/api-negocio.md) ----
+    public record ReceiptLineRequest(@NotNull @Pattern(regexp = "PRODUCT|PLAN|FREE") String kind, Long refId,
+                                     @Size(max = 120) String name, @DecimalMin("0.01") @DecimalMax("100000") BigDecimal unitPrice,
+                                     @NotNull @Min(1) @Max(999) Integer quantity, Integer taxRate) {}
+    public record ReceiptRequest(@NotNull Long clientId, @NotNull LocalDate issueDate, LocalDate dueDate, @Size(max = 500) String notes,
+                                 @NotNull @Pattern(regexp = "CASH|TRANSFER|BIZUM|PAYPAL|CARD|OTHER") String method,
+                                 @NotNull @Pattern(regexp = "PENDING|PAID") String status, LocalDate paidDate,
+                                 @NotNull @Size(min = 1, max = 20) List<@Valid @NotNull ReceiptLineRequest> lines,
+                                 Long couponId, @Size(max = 60) String discountName,
+                                 @DecimalMin("0") @DecimalMax("100") BigDecimal discountPct) {}
+    public record ReceiptLineDto(String kind, Long refId, String name, BigDecimal unitPrice, int quantity, int taxRate, BigDecimal lineTotal) {}
+    public record ReceiptDto(Long id, String reference, Long clientId, String clientName, LocalDate issueDate, LocalDate dueDate,
+                             LocalDate paidDate, String notes, String method, String status, boolean overdue, String origin,
+                             Long subscriptionId, LocalDate periodStart, LocalDate periodEnd, List<ReceiptLineDto> lines,
+                             BigDecimal subtotal, String discountName, BigDecimal discountPct, BigDecimal discountAmount, BigDecimal total,
+                             String voidReason, LocalDateTime voidedAt, LocalDateTime createdAt, String trainerName) {}
+    public record PayReceiptRequest(LocalDate paidDate, @Pattern(regexp = "CASH|TRANSFER|BIZUM|PAYPAL|CARD|OTHER") String method) {}
+    public record VoidReceiptRequest(@NotBlank @Size(max = 200) String reason) {}
+    public record ReceiptSummaryDto(BigDecimal collected, BigDecimal pending, BigDecimal overdue, long countPaid, long countPending) {}
+    // ---- Negocio: productos, planes, cupones, suscripciones y bonos ----
+    public record BonusDefinitionRequest(@NotNull Long sessionTypeId, @NotNull @Min(1) @Max(100) Integer sessions,
+                                         @NotNull @Min(1) @Max(730) Integer validDays) {}
+    public record BonusDefinitionDto(Long id, Long sessionTypeId, String sessionTypeName, String color, int sessions, int validDays) {}
+    public record ProductRequest(@NotBlank @Size(max = 120) String name, @NotBlank @Size(max = 1000) String description,
+                                 @NotNull @DecimalMin("0.01") @DecimalMax("100000") BigDecimal price, @NotNull Integer taxRate,
+                                 @Pattern(regexp = "HIDDEN|ALL") String visibility, @NotBlank @Size(max = 300) String cover,
+                                 @Size(max = 5) List<@Valid @NotNull BonusDefinitionRequest> bonuses, List<Long> autoTagIds) {}
+    public record SubscriptionPlanRequest(@NotBlank @Size(max = 120) String name, @NotBlank @Size(max = 1000) String description,
+                                          @NotNull @DecimalMin("0.01") @DecimalMax("100000") BigDecimal price, @NotNull Integer taxRate,
+                                          @Pattern(regexp = "HIDDEN|ALL") String visibility, @NotBlank @Size(max = 300) String cover,
+                                          @Size(max = 5) List<@Valid @NotNull BonusDefinitionRequest> bonuses, List<Long> autoTagIds,
+                                          @NotNull @Pattern(regexp = "WEEKLY|MONTHLY|QUARTERLY|SEMIANNUAL|ANNUAL") String frequency) {}
+    public record ProductDto(Long id, String name, String description, BigDecimal price, int taxRate, String visibility, String cover,
+                             String coverUrl, List<BonusDefinitionDto> bonuses, List<Long> autoTagIds, boolean automated, boolean hasBonus,
+                             long sales, boolean archived, LocalDateTime createdAt) {}
+    public record SubscriptionPlanDto(Long id, String name, String description, BigDecimal price, int taxRate, String visibility, String cover,
+                                      String coverUrl, List<BonusDefinitionDto> bonuses, List<Long> autoTagIds, boolean automated, boolean hasBonus,
+                                      long sales, boolean archived, LocalDateTime createdAt, String frequency, long activeSubscriptions) {}
+    public record CouponRequest(@NotBlank @Size(min = 3, max = 30) String code, @Size(max = 300) String description,
+                                @NotNull @Pattern(regexp = "PERCENT|AMOUNT") String type,
+                                @NotNull @DecimalMin("0.01") @DecimalMax("100000") BigDecimal value,
+                                @NotNull @Pattern(regexp = "ALL|PRODUCTS|PLANS") String appliesTo,
+                                @Min(1) @Max(100000) Integer maxUses, LocalDate expiresAt, boolean active) {}
+    public record CouponDto(Long id, String code, String description, String type, BigDecimal value, String appliesTo, Integer maxUses,
+                            int uses, LocalDate expiresAt, boolean active, String status, LocalDateTime createdAt) {}
+    public record SubscriptionRequest(@NotNull Long clientId, @NotNull Long planId, @NotNull LocalDate startDate, Long couponId) {}
+    public record SubscriptionDto(Long id, Long clientId, String clientName, Long planId, String planName, String frequency, BigDecimal price,
+                                  LocalDate startDate, LocalDate nextPeriodStart, String status, LocalDateTime cancelledAt) {}
+    public record ClientBonusDto(Long id, Long sessionTypeId, String sessionTypeName, String color, int total, int used, int remaining,
+                                 LocalDate expiresAt, String status, Long receiptId, String productName) {}
+
+    // ---- Negocio: Datos de negocio (panel e informes) ----
+    public record FinanceKpisDto(BigDecimal totalSold, BigDecimal subscriptionSales, BigDecimal productSales, BigDecimal receiptsCreated, BigDecimal voidedAmount) {}
+    public record SubscriptionDayDto(LocalDate date, BigDecimal newSales, BigDecimal renewals, BigDecimal voided) {}
+    public record SubscriptionsChartDto(BigDecimal total, List<SubscriptionDayDto> days) {}
+    public record AmountDayDto(LocalDate date, BigDecimal amount) {}
+    public record ReceiptsChartDto(BigDecimal total, List<AmountDayDto> days) {}
+    public record ReceiptStatusDto(BigDecimal paidAmount, int paidPct, BigDecimal pendingAmount, int pendingPct) {}
+    /** platformCost y result: solo ADMIN (null para TRAINER). */
+    public record FinanceDto(FinanceKpisDto kpis, BigDecimal platformCost, BigDecimal result, SubscriptionsChartDto subscriptionsChart,
+                             ReceiptsChartDto receiptsChart, ReceiptStatusDto receiptStatus) {}
+    public record ItemIncomeDto(String kind, Long refId, String name, long units, BigDecimal income) {}
+    public record ItemBuyerDto(Long clientId, String clientName, BigDecimal amount, Long receiptId, LocalDate date) {}
+    public record ItemSalesDto(String name, long sales, BigDecimal income, List<ItemBuyerDto> buyers) {}
+    public record ClientsKpisDto(long totalClients, long newClients, long regularClients, long avgTenureDays) {}
+    public record ValueDayDto(LocalDate date, long value) {}
+    /** available = false: la serie no se puede calcular (ARCHIVED: no se guarda la fecha de archivo). */
+    public record ClientsEvolutionDto(String series, boolean available, List<ValueDayDto> days) {}
+    public record ContactedDto(long leads, long notRegistered) {}
+    public record WaitingDto(long notStarted, long withoutPlanning) {}
+    public record ActiveClientsDto(long withSubscription, long withoutSubscription) {}
+    public record AtRiskDto(long lowCompliance, long inactive) {}
+    public record FinishedDto(long archived) {}
+    public record ClientStatesDto(ContactedDto contacted, WaitingDto waiting, ActiveClientsDto active, AtRiskDto atRisk, FinishedDto finished) {}
+    public record ClientsDto(ClientsKpisDto kpis, ClientsEvolutionDto evolution, ClientStatesDto states) {}
+    public record ClientDayRowDto(Long clientId, String name, String state) {}
+    public record ClientsDayDto(LocalDate date, long total, List<ClientDayRowDto> clients) {}
+    /** clientId null en leads e invitaciones (aún no son clientes). */
+    public record ClientStateRowDto(Long clientId, String name, String email, String detail) {}
+    public record ServicesKpisDto(long assignedActivities, Integer avgCompliance, Integer sessionAttendancePct, Integer unbookedSeatsPct) {}
+    public record ComplianceByTypeDto(String type, Integer pct, boolean available) {}
+    public record RatingByTypeDto(String type, BigDecimal average, long count) {}
+    public record RatingsDto(boolean available, BigDecimal average, List<RatingByTypeDto> byType) {}
+    public record ServicesDto(ServicesKpisDto kpis, List<ComplianceByTypeDto> complianceByType, RatingsDto ratings) {}
+
+    // ---- Physical AI (contrato en docs/api-ia.md) ----
+    public record AiCreditsDto(int used, int total, LocalDate resetsOn) {}
+    public record AiAvailabilityDto(boolean available, String reason) {}
+    public record AiStatusDto(boolean enabled, String provider, String model, AiCreditsDto credits, long chatMessagesToday, int chatDailyLimit,
+                              boolean dailyBudgetExhausted, java.util.Map<String, AiAvailabilityDto> assistants) {}
+    public record AiInstructionsRequest(@NotNull @Size(max = 1000) String text) {}
+    public record AiInstructionsDto(String text, LocalDateTime updatedAt) {}
+    public record AiDraftDto(String assistant, String refType, Long refId, String name, String editPath, int creditsUsed,
+                             AiCreditsDto credits, List<String> warnings) {}
+    public record AiWorkoutRequest(@NotBlank @Size(min = 10, max = 1000) String prompt, boolean ownExercisesOnly) {}
+    public record AiProgramInclude(boolean workouts, boolean cardio, boolean nutrition) {}
+    public record AiProgramRequest(@NotNull Integer weeks, @NotNull AiProgramInclude include, Long clientId, boolean prioritizeOwn,
+                                   @NotBlank @Size(min = 10, max = 500) String prompt,
+                                   @Pattern(regexp = "WEIGHT_LOSS|HOME|HYBRID|SENIORS|VOLUME") String template) {}
+    public record AiSuggestionDto(String key, String title, String subtitle) {}
+    public record AiConversationRequest(@Size(max = 60) String context) {}
+    public record AiConversationDto(Long id, String title, String context, LocalDateTime updatedAt) {}
+    public record AiMentionDto(Long clientId, String name) {}
+    public record AiMessageDto(Long id, String role, String text, List<AiMentionDto> mentions, LocalDateTime createdAt) {}
+    public record AiConversationDetailDto(AiConversationDto conversation, List<AiMessageDto> messages) {}
+    public record AiSendMessageRequest(@NotBlank @Size(max = 2000) String text,
+                                       @Pattern(regexp = "CLIENT_REPORT|ACTIVITY_SUMMARY|INACTIVE_7_DAYS|WHAT_CAN_YOU_DO") String suggestion,
+                                       @Size(max = 10) List<Long> mentionClientIds) {}
+    public record AiSendMessageResponse(AiMessageDto user, AiMessageDto assistant) {}
+
+    // ---- Negocio: servicios de la plataforma (solo ADMIN) ----
+    public record PlatformServiceRequest(@NotBlank @Size(max = 60) String name, @Size(max = 200) String purpose, @NotBlank @Size(max = 60) String plan,
+                                         @NotNull @DecimalMin("0") @DecimalMax("100000") BigDecimal monthlyCost, LocalDate renewalDate,
+                                         @Size(max = 300) @Pattern(regexp = "https://.*") String dashboardUrl, @Size(max = 1000) String freeLimits,
+                                         boolean active) {}
+    public record PlatformServiceDto(Long id, String name, String purpose, String plan, BigDecimal monthlyCost, LocalDate renewalDate,
+                                     String dashboardUrl, String freeLimits, boolean active, long paymentsCount, LocalDate lastPaymentDate) {}
+    /** Totales de los servicios activos. */
+    public record PlatformServicesDto(List<PlatformServiceDto> services, BigDecimal monthlyTotal, BigDecimal yearlyEstimate) {}
+    public record PlatformPaymentRequest(@NotNull Long serviceId, @NotNull LocalDate date, @NotBlank @Size(max = 120) String concept,
+                                         @NotNull @DecimalMin("0.01") @DecimalMax("100000") BigDecimal amount,
+                                         @NotNull @Pattern(regexp = "PAID|PENDING") String status, Long fileId, @Size(max = 500) String notes) {}
+    public record PlatformPaymentDto(Long id, Long serviceId, String serviceName, LocalDate date, String concept, BigDecimal amount, String status,
+                                     Long fileId, String fileName, String fileUrl, String notes, LocalDateTime createdAt) {}
+
+    /** amount: positivo en ingresos, negativo en gastos. sourceType: RECEIPT | PLATFORM_PAYMENT. */
+    public record MovementDto(LocalDate date, String type, String concept, BigDecimal amount, String description, String sourceType, Long sourceId) {}
 
     // ---- Dashboards e informes ----
     public record TrainerDashboard(long clients, long upcomingAppointments) {}

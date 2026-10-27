@@ -31,10 +31,14 @@ public class InvitationService {
     private final JwtService jwt;
     private final AuthService auth;
     private final AccessService access;
+    private final SubscriptionPlanRepository plans;
+    private final SubscriptionService subscriptions;
 
     public InvitationService(ClientInvitationRepository i, ClientTagRepository t, UserRepository u, ClientProfileService p,
-                             PasswordEncoder e, JwtService j, AuthService a, AccessService ac) {
+                             PasswordEncoder e, JwtService j, AuthService a, AccessService ac, SubscriptionPlanRepository pl,
+                             SubscriptionService s) {
         invitations = i; tags = t; users = u; profiles = p; enc = e; jwt = j; auth = a; access = ac;
+        plans = pl; subscriptions = s;
     }
 
     @Transactional(readOnly = true)
@@ -53,7 +57,7 @@ public class InvitationService {
         if (users.findByEmailIgnoreCase(email).isPresent()) throw new ConflictException("Ya existe un usuario con ese email");
         if (invitations.existsByTrainerIdAndEmailIgnoreCaseAndAcceptedAtIsNull(me.id(), email))
             throw new ConflictException("Ya hay una invitación pendiente para ese email");
-        ClientInvitation i = base(me.id(), r.tagId());
+        ClientInvitation i = base(me.id(), r.tagId(), r.planId());
         i.setEmail(email);
         i.setName(r.name().trim());
         i.setPlanName(r.planName() == null || r.planName().isBlank() ? null : r.planName().trim());
@@ -64,7 +68,7 @@ public class InvitationService {
     @Transactional
     public InvitationDto createLink(InvitationLinkRequest r) {
         AuthUser me = access.current();
-        return toDto(invitations.save(base(me.id(), r == null ? null : r.tagId())));
+        return toDto(invitations.save(base(me.id(), r == null ? null : r.tagId(), r == null ? null : r.planId())));
     }
 
     /** Renueva fecha y caducidad (no envía correo: no hay SMTP configurado). */
@@ -108,13 +112,16 @@ public class InvitationService {
         u = users.save(u);
 
         profiles.onClientCreated(u.getId(), i.getTrainerId(), i.getTagId() == null ? List.of() : List.of(i.getTagId()), i.getPlanName());
+        if (i.getPlanId() != null) subscriptions.startFromInvitation(i.getTrainerId(), u.getId(), i.getPlanId());
         if (i.getEmail() != null) { i.setAcceptedAt(LocalDateTime.now()); i.setClientId(u.getId()); }
         return new LoginResponse(jwt.generate(new AuthUser(u.getId(), u.getEmail(), u.getRole())), auth.profile(u));
     }
 
     // ---------- internos ----------
 
-    private ClientInvitation base(Long trainerId, Long tagId) {
+    private ClientInvitation base(Long trainerId, Long tagId, Long planId) {
+        if (planId != null && plans.findById(planId).filter(p -> p.getTrainerId().equals(trainerId) && !p.isArchived()).isEmpty())
+            throw new BadRequestException("El plan de pago no existe");
         if (tagId != null) {
             ClientTag t = tags.findById(tagId).orElseThrow(() -> new BadRequestException("La etiqueta no existe"));
             if (!Objects.equals(t.getTrainerId(), trainerId)) throw new BadRequestException("La etiqueta no es tuya");
@@ -123,6 +130,7 @@ public class InvitationService {
         ClientInvitation i = new ClientInvitation();
         i.setTrainerId(trainerId);
         i.setTagId(tagId);
+        i.setPlanId(planId);
         i.setToken(newToken());
         i.setInvitedAt(now);
         i.setExpiresAt(now.plusDays(VALID_DAYS));
@@ -150,6 +158,6 @@ public class InvitationService {
 
     static InvitationDto toDto(ClientInvitation i) {
         return new InvitationDto(i.getId(), i.getEmail(), i.getName(), i.getTagId(), i.getPlanName(), i.getToken(),
-                i.getInvitedAt(), i.getExpiresAt());
+                i.getInvitedAt(), i.getExpiresAt(), i.getPlanId());
     }
 }

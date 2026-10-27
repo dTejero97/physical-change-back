@@ -14,6 +14,7 @@ public class ClientInvitation {
     @Column(length = 120) private String name;
     @Column(name = "TAG_ID") private Long tagId;
     @Column(name = "PLAN_NAME", length = 120) private String planName;
+    @Column(name = "PLAN_ID") private Long planId;
     @Column(nullable = false, unique = true, length = 64) private String token;
     @Column(name = "INVITED_AT", nullable = false) private LocalDateTime invitedAt;
     @Column(name = "EXPIRES_AT", nullable = false) private LocalDateTime expiresAt;
@@ -31,6 +32,8 @@ public class ClientInvitation {
     public void setTagId(Long t) { this.tagId = t; }
     public String getPlanName() { return planName; }
     public void setPlanName(String p) { this.planName = p; }
+    public Long getPlanId() { return planId; }
+    public void setPlanId(Long p) { this.planId = p; }
     public String getToken() { return token; }
     public void setToken(String t) { this.token = t; }
     public LocalDateTime getInvitedAt() { return invitedAt; }

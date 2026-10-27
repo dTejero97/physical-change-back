@@ -10,6 +10,11 @@ import java.util.*;
 
 public interface UserRepository extends JpaRepository<AppUser, Long> {
     Optional<AppUser> findByEmailIgnoreCase(String email);
+
+    /** Bloquea la fila del usuario hasta el fin de la transacción (créditos de Physical AI sin carreras). */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from AppUser u where u.id = :id")
+    Optional<AppUser> lockById(@Param("id") Long id);
     Page<AppUser> findByRoleAndTrainerId(Role role, Long trainerId, Pageable p);
     List<AppUser> findByRoleAndTrainerId(Role role, Long trainerId);
     Page<AppUser> findByRole(Role role, Pageable p);

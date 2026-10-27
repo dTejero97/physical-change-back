@@ -3,71 +3,68 @@ package com.physicalchange.service;
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
-import com.physicalchange.mapper.PaymentMapper;
 import com.physicalchange.repository.*;
 import com.physicalchange.security.*;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
-/** Cobros del entrenador a sus clientes. El cliente solo consulta los suyos. */
+/**
+ * Fachada de compatibilidad /api/payments (ADR-004 §2): mismo PaymentDto, pero lee y escribe comprobantes.
+ * El id es el del comprobante. Un cobro es un comprobante con una línea libre; los anulados no se listan (antes se borraban).
+ * El cliente solo consulta los suyos.
+ */
 @Service
 public class PaymentService {
-    private final PaymentRepository payments;
-    private final UserRepository users;
+    private final ReceiptRepository receipts;
+    private final ReceiptService receiptService;
     private final AccessService access;
 
-    public PaymentService(PaymentRepository p, UserRepository u, AccessService a) { payments = p; users = u; access = a; }
-
-    private String nameOf(Long userId) {
-        return users.findById(userId).map(AppUser::getFullName).orElse("—");
-    }
+    public PaymentService(ReceiptRepository r, ReceiptService rs, AccessService a) { receipts = r; receiptService = rs; access = a; }
 
     @Transactional(readOnly = true)
     public Page<PaymentDto> list(Pageable p) {
         AuthUser me = access.current();
-        LocalDate today = LocalDate.now();
-        Page<Payment> page = me.role() == Role.CLIENT
-                ? payments.findByClientIdOrderByDueDateDesc(me.id(), p)
-                : payments.findByTrainerIdOrderByDueDateDesc(me.id(), p);
-        return page.map(x -> PaymentMapper.toDto(x, nameOf(x.getClientId()), today));
+        Pageable unsorted = PageRequest.of(p.getPageNumber(), p.getPageSize());
+        Page<Receipt> page = me.role() == Role.CLIENT
+                ? receipts.findByClientIdAndStatusNotOrderByDueDateDescIdDesc(me.id(), "VOID", unsorted)
+                : receipts.findByTrainerIdAndStatusNotOrderByDueDateDescIdDesc(me.id(), "VOID", unsorted);
+        return receiptService.page(page, (x, d) -> toPayment(d, x.getTrainerId()));
     }
 
     @Transactional
     public PaymentDto create(PaymentRequest r) {
-        access.assertCanAccessClient(r.clientId());
-        AuthUser me = access.current();
-        AppUser client = users.findById(r.clientId()).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
-        Payment p = new Payment();
-        p.setTrainerId(me.role() == Role.ADMIN ? client.getTrainerId() : me.id());
-        p.setClientId(client.getId());
-        p.setAmount(r.amount());
-        p.setConcept(r.concept());
-        p.setDueDate(r.dueDate());
-        p.setStatus("PENDING");
-        return PaymentMapper.toDto(payments.save(p), client.getFullName(), LocalDate.now());
+        LocalDate today = LocalDate.now();
+        String concept = r.concept().strip();
+        ReceiptDto d = receiptService.create(new ReceiptRequest(r.clientId(), r.dueDate().isBefore(today) ? r.dueDate() : today, r.dueDate(),
+                concept.length() > 120 ? concept : null, "OTHER", "PENDING", null,
+                List.of(new ReceiptLineRequest("FREE", null, concept, r.amount(), 1, 0)), null, null, null));
+        return toPayment(d, access.current().id());
     }
 
     @Transactional
     public PaymentDto markPaid(Long id) {
-        Payment p = owned(id);
-        if ("PAID".equals(p.getStatus())) throw new ConflictException("El pago ya está marcado como pagado");
-        p.setStatus("PAID");
-        p.setPaidDate(LocalDate.now());
-        return PaymentMapper.toDto(p, nameOf(p.getClientId()), LocalDate.now());
+        if ("PAID".equals(receiptService.owned(id).getStatus())) throw new ConflictException("El pago ya está marcado como pagado");
+        return toPayment(receiptService.pay(id, null), access.current().id());
     }
 
+    /** "Borrar" un cobro pendiente = anularlo. Uno cobrado sigue sin poder borrarse. */
     @Transactional
     public void delete(Long id) {
-        Payment p = owned(id);
-        if ("PAID".equals(p.getStatus())) throw new ConflictException("Un pago cobrado no se puede borrar");
-        payments.delete(p);
+        Receipt x = receiptService.owned(id);
+        if ("PAID".equals(x.getStatus())) throw new ConflictException("Un pago cobrado no se puede borrar");
+        if ("VOID".equals(x.getStatus())) throw new NotFoundException("Pago no encontrado");
+        receiptService.voidReceipt(id, "Borrado desde Pagos");
     }
 
-    private Payment owned(Long id) {
-        Payment p = payments.findById(id).orElseThrow(() -> new NotFoundException("Pago no encontrado"));
-        access.assertOwnerOrAdmin(p.getTrainerId());
-        return p;
+    /** Concepto = primera línea (o las notas si el concepto original no cabía en la línea). */
+    private static PaymentDto toPayment(ReceiptDto d, Long trainerId) {
+        String concept = d.notes() != null && d.lines().size() == 1 && d.notes().startsWith(d.lines().get(0).name()) ? d.notes()
+                : d.lines().isEmpty() ? d.reference() : d.lines().get(0).name() + (d.lines().size() > 1 ? " (+" + (d.lines().size() - 1) + ")" : "");
+        BigDecimal amount = d.total();
+        return new PaymentDto(d.id(), trainerId, d.clientId(), d.clientName(), amount, concept, d.dueDate(), d.paidDate(), d.status(), d.overdue());
     }
 }

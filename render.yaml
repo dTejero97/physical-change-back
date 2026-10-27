@@ -29,3 +29,10 @@ services:
         sync: false
       - key: R2_BUCKET             # p. ej. physical-change-files
         sync: false
+      # ---- Physical AI con Cloudflare Workers AI (ADR-003, MANUAL-DESPLIEGUE.md Parte 9) ----
+      - key: AI_PROVIDER           # vacío/none = Physical AI desactivado (503) | workers-ai cuando el token esté puesto
+        sync: false
+      - key: CF_ACCOUNT_ID         # vacío = se usa R2_ACCOUNT_ID (misma cuenta de Cloudflare)
+        sync: false
+      - key: CF_AI_API_TOKEN       # secreto: token "Workers AI" (Read + Edit), distinto del de R2
+        sync: false

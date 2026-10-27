@@ -11,6 +11,7 @@ public class DashboardController {
     private final DashboardService svc;
     public DashboardController(DashboardService s) { svc = s; }
 
-    @GetMapping("/trainer") @PreAuthorize("hasRole('TRAINER')") public TrainerDashboard trainer() { return svc.trainer(); }
+    /** El admin es el profesional en producción: también tiene su panel (QA T80). */
+    @GetMapping("/trainer") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')") public TrainerDashboard trainer() { return svc.trainer(); }
     @GetMapping("/client") @PreAuthorize("hasRole('CLIENT')") public ClientDashboard client() { return svc.client(); }
 }

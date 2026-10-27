@@ -48,12 +48,12 @@ Enumerados: `planStatus` ACTIVE | PENDING_START | SENT | NO_PLAN | ENDING_SOON |
 |---|---|---|---|
 | GET | `/api/invitations` | — | `InvitationDto[]` pendientes por email |
 | POST | `/api/invitations` | `InvitationRequest` | 201 `InvitationDto` · 409 si el email ya es usuario o tiene invitación pendiente |
-| POST | `/api/invitations/link` | `{ tagId? }` | 201 `InvitationDto` (enlace genérico reutilizable, caduca a los 14 días) |
+| POST | `/api/invitations/link` | `{ tagId?, planId? }` | 201 `InvitationDto` (enlace genérico reutilizable, caduca a los 14 días) |
 | POST | `/api/invitations/{id}/resend` | — | `InvitationDto` (renueva fecha y caducidad) |
 | DELETE | `/api/invitations/{id}` | — | 204 |
 
-`InvitationRequest { email, name, tagId?, planName? }`
-`InvitationDto { id, email?, name?, tagId, planName, token, invitedAt, expiresAt }` · enlace = `<origen del front>/invitacion/<token>`.
+`InvitationRequest { email, name, tagId?, planName?, planId? }` · `planId`: plan de suscripción propio y no archivado (400 si no). Al aceptar la invitación se crea la suscripción desde ese día (docs/api-negocio.md).
+`InvitationDto { id, email?, name?, tagId, planName, token, invitedAt, expiresAt, planId }` · enlace = `<origen del front>/invitacion/<token>`.
 No hay servidor de correo: "enviar" registra la invitación y el profesional comparte el enlace.
 
 ## Público (sin JWT) — `/api/public/invitations`

@@ -17,11 +17,11 @@ public class ReportService {
     private final UserRepository users;
     private final AppointmentRepository appointments;
     private final WorkoutAssignmentRepository assignments;
-    private final PaymentRepository payments;
+    private final ReceiptRepository payments;
     private final AccessService access;
 
     public ReportService(UserRepository u, AppointmentRepository a, WorkoutAssignmentRepository w,
-                         PaymentRepository p, AccessService ac) {
+                         ReceiptRepository p, AccessService ac) {
         users = u; appointments = a; assignments = w; payments = p; access = ac;
     }
 

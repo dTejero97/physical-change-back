@@ -31,6 +31,16 @@ Antes de responder cualquier `GET` de comprobantes o KPIs se ejecuta la **puesta
 
 No existen `PUT` ni `DELETE`: un comprobante no se modifica (ADR-004 §1).
 
+**Implementación (T67):** `ReceiptController` / `ReceiptService`. Un comprobante ajeno responde **404**. Sin `from`/`to`, el rango es el último año hasta hoy. `summary`: `collected` suma los PAID por `paidDate` del rango; `pending` y `overdue`, los PENDING por `issueDate`. Exportación: columnas Referencia, Fecha, Vencimiento, Cliente, Conceptos, Tipo, Método, Estado, Fecha de pago, Subtotal, Descuento y Total (`util/Spreadsheet`). Los cupones `AMOUNT` guardan `discountPct = null` y el importe en `discountAmount`; si no se envía `discountName`, se usa el código del cupón.
+Bonos (T68): `BonusService` escucha `ReceiptEvents.ReceiptPaidEvent` / `ReceiptVoidedEvent`. La puesta al día de suscripciones se ejecuta antes de `GET /api/receipts`, `/summary` y `/export`, y al arrancar la aplicación.
+
+**Implementación (T68):** `CatalogService` (productos y planes), `CouponService`, `SubscriptionService`, `BonusService`.
+- Un producto o plan ajeno responde 404. `DELETE` de un plan también lo archiva si tiene suscripciones (aunque no tenga ventas).
+- `sales` = unidades en comprobantes no anulados. Etiquetas automáticas: al pagar el comprobante (productos y planes) y al empezar una suscripción.
+- Suscripción con cupón: el uso se gasta una vez al suscribir y el descuento se aplica a todos los periodos. El cupón no puede ser de `PRODUCTS`.
+- Comprobante de periodo: emisión y vencimiento = inicio del periodo, método `OTHER`, una línea `PLAN` con el precio guardado en la suscripción.
+- Canje de bono: al pasar una reserva a un estado que ocupa plaza (alta con clientes, reservar, cambio de estado o salida de la cola). Se devuelve al dejar de ocupar plaza o al borrar la sesión, solo si aún no ha empezado.
+
 `ReceiptRequest { clientId, issueDate, dueDate?, notes? (≤500), method, status (PENDING|PAID), paidDate?, lines[1..20], couponId?, discountName? (≤60), discountPct? (0-100) }`
 - `lines[]`: `{ kind, refId?, name (1-120), unitPrice (0.01-100000), quantity (1-999), taxRate }`. En PRODUCT/PLAN, `refId` es obligatorio y `name`, `unitPrice` y `taxRate` se toman del catálogo si vienen vacíos.
 - `couponId` y `discountPct` son excluyentes. El cupón tiene que estar activo, sin caducar, con usos libres y aplicable a los tipos de línea (409 si no). Su uso se descuenta al guardar.
@@ -130,6 +140,15 @@ Parámetros comunes `from`, `to` (por defecto los últimos 30 días). Cada métr
 | `avgCompliance` | parcial | Media solo de los tipos disponibles |
 | Valoraciones (`ratings`) | **sin datos** | Las da el cliente desde su app |
 | Rendimiento de mi equipo | solo el profesional | Equipo real en T28 |
+
+**Implementación (T69):** `BusinessController`, `BusinessService`, `BusinessReportService`. Diferencias con lo de arriba que el frontend debe tener en cuenta (T76):
+- `ServicesDto.kpis.avgCompliance`, `sessionAttendancePct` y `unbookedSeatsPct` son `null` cuando no hay datos (sin asistencias pasadas, sin asignaciones o sin sesiones con plazas), igual que `complianceByType[].pct`.
+- `ClientsDto.evolution` lleva `available`; la serie `ARCHIVED` sale con `available: false` y `/clients/day?series=ARCHIVED` da 400, porque no se guarda la fecha de archivo.
+- Concepto libre en el detalle por producto: `GET /api/business/finance/by-item/FREE/0?name=<nombre>`.
+- `/finance/day` devuelve los comprobantes emitidos **o** cobrados ese día.
+- `/clients/states/{state}`: `leads` y `notRegistered` devuelven `clientId: null` (aún no son clientes).
+- Finanzas: un comprobante con líneas de plan y de producto se reparte entre "suscripciones" y "productos" por el peso de sus líneas, con el descuento prorrateado. "Nueva" = comprobante manual con plan o primer periodo de la suscripción; "Renovación" = periodos siguientes. Las anulaciones van al día en que se anularon.
+- "Habitual" = activo con más de 90 días de alta; "En riesgo" = cumplimiento de workouts < 50 % en los últimos 30 días o última actividad (series o workouts completados) hace más de 7 días.
 
 ## Informes — `GET /api/business/reports/{report}?from&to&format=xlsx|csv`
 `report`: `billing` (comprobantes con líneas) · `client-compliance` (por cliente: sesiones reservadas/asistidas, workouts asignados/hechos, bonos canjeados) · `team-performance` (por profesional: clientes activos, actividades asignadas, cumplimiento medio; hoy una fila) · `incomplete-signups` (invitaciones no aceptadas y leads: nombre, email, teléfono, origen, fecha, etiqueta).

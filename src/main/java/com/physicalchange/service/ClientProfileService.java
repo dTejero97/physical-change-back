@@ -25,13 +25,13 @@ public class ClientProfileService {
     private final ClientTagRepository tags;
     private final WorkoutAssignmentRepository assignments;
     private final ExerciseLogRepository logs;
-    private final PaymentRepository payments;
+    private final ReceiptRepository payments;
     private final ChatMessageRepository messages;
     private final AccessService access;
     private final ObjectMapper json;
 
     public ClientProfileService(ClientProfileRepository p, UserRepository u, ClientTagRepository t, WorkoutAssignmentRepository a,
-                                ExerciseLogRepository l, PaymentRepository pay, ChatMessageRepository m, AccessService ac, ObjectMapper j) {
+                                ExerciseLogRepository l, ReceiptRepository pay, ChatMessageRepository m, AccessService ac, ObjectMapper j) {
         profiles = p; users = u; tags = t; assignments = a; logs = l; payments = pay; messages = m; access = ac; json = j;
     }
 
@@ -136,7 +136,7 @@ public class ClientProfileService {
         return wanted;
     }
 
-    private record Stats(Map<Long, int[]> compliance, Map<Long, LocalDate> lastActivity, Map<Long, Payment> lastPayment) {}
+    private record Stats(Map<Long, int[]> compliance, Map<Long, LocalDate> lastActivity, Map<Long, Receipt> lastPayment) {}
 
     private Stats stats(List<Long> ids) {
         LocalDate today = LocalDate.now();
@@ -157,15 +157,16 @@ public class ClientProfileService {
         for (Object[] row : logs.lastLogDates(ids)) last.merge((Long) row[0], (LocalDate) row[1], ClientProfileService::max);
         for (Object[] row : assignments.lastCompletedDates(ids)) last.merge((Long) row[0], (LocalDate) row[1], ClientProfileService::max);
 
-        Map<Long, Payment> lastPayment = new HashMap<>();
-        for (Payment p : payments.findByClientIdInOrderByDueDateDesc(ids)) lastPayment.putIfAbsent(p.getClientId(), p);
+        Map<Long, Receipt> lastPayment = new HashMap<>();
+        // Comprobantes (ADR-004 §2): el último no anulado de cada cliente.
+        for (Receipt p : payments.findByClientIdInAndStatusNotOrderByDueDateDesc(ids, "VOID")) lastPayment.putIfAbsent(p.getClientId(), p);
 
         return new Stats(compliance, last, lastPayment);
     }
 
     private ClientProfileDto toDto(AppUser c, ClientProfile p, Stats s) {
         int[] comp = s.compliance().getOrDefault(c.getId(), new int[]{ 0, 0 });
-        Payment pay = s.lastPayment().get(c.getId());
+        Receipt pay = s.lastPayment().get(c.getId());
         String payState = null; LocalDate payDate = null;
         if (pay != null) {
             boolean paid = "PAID".equals(pay.getStatus());

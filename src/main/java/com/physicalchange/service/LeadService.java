@@ -45,7 +45,7 @@ public class LeadService {
     public InvitationDto invite(Long id) {
         ClientLead l = owned(id);
         if (l.getEmail() == null) throw new BadRequestException("El lead no tiene email para invitarle");
-        InvitationDto inv = invitations.create(new InvitationRequest(l.getEmail(), l.getName(), null, null));
+        InvitationDto inv = invitations.create(new InvitationRequest(l.getEmail(), l.getName(), null, null, null));
         leads.delete(l);
         return inv;
     }

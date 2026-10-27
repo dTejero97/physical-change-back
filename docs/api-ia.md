@@ -17,6 +17,12 @@ Reglas comunes
 - **Se cobra solo si sale bien**: el crédito se descuenta en la misma transacción que guarda el borrador.
 - Lo que escribe el profesional son **datos**, no instrucciones del sistema (ADR-003 §10 y riesgos).
 
+**Implementación (T70):** `AiController`, `service/ai/AiService` (estado, créditos, instrucciones, workout y programa), `AiChatService` (conversaciones), `AiProvider` con `WorkersAiProvider` (`config/AiConfig`, `AI_PROVIDER=workers-ai`) y uno desactivado (`none`). Rutas de los asistentes: `POST /api/ai/generate/workout`, `/program`, `/daily-plan`, `/recipe`.
+- Formato de Workers AI comprobado en la documentación de Cloudflare (2026-10-27): `POST /client/v4/accounts/{cuenta}/ai/run/{modelo}` con `messages`, `max_tokens` y `response_format { type: "json_schema", json_schema }`; respuesta en `result.response` (texto u objeto en JSON mode) y `result.usage { prompt_tokens, completion_tokens }`. **Sin probar contra la cuenta real** (falta el token): lo comprueba DevOps en T84.
+- Workout: los elementos con un ejercicio fuera del catálogo o fuera de rango se descartan con aviso. Programa: un `WORKOUT` con un id que no es tuyo pasa a `NOTE` con su título (con aviso) y las semanas fuera de rango se descartan. "Personalizar para un cliente" envía solo sus servicios y etiquetas (el perfil no tiene objetivo, nivel ni días disponibles).
+- Chat: se envían como mucho los 6 últimos mensajes, con los nombres de los clientes propios sustituidos por "Cliente N"; 429 lleva `Retry-After` con los segundos hasta medianoche. No se cobra el chat (crédito 0) pero cuenta en el presupuesto de neuronas.
+- La receta sigue respondiendo 409 (T27): **pendiente decidir el contrato de imágenes** (`generateImages: false` aquí frente a la decisión del usuario del 2026-10-26; ver Dudas del 2026-10-27 en `tareas.md`).
+
 ## Estado y créditos
 | Método | Ruta | Respuesta |
 |---|---|---|

@@ -19,6 +19,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConflictException.class) ResponseEntity<ErrorResponse> cf(ConflictException e) { return build(HttpStatus.CONFLICT, e.getMessage()); }
     @ExceptionHandler(BadRequestException.class) ResponseEntity<ErrorResponse> br(BadRequestException e) { return build(HttpStatus.BAD_REQUEST, e.getMessage()); }
     @ExceptionHandler(GoneException.class) ResponseEntity<ErrorResponse> gn(GoneException e) { return build(HttpStatus.GONE, e.getMessage()); }
+    @ExceptionHandler(AiException.class) ResponseEntity<ErrorResponse> ai(AiException e) {
+        ResponseEntity<ErrorResponse> r = build(HttpStatus.valueOf(e.status()), e.getMessage());
+        return e.retryAfterSeconds() == null ? r
+                : ResponseEntity.status(r.getStatusCode()).header("Retry-After", String.valueOf(e.retryAfterSeconds())).body(r.getBody());
+    }
     /** Validación de parámetros de ruta (p. ej. formato del token de invitación). */
     @ExceptionHandler({jakarta.validation.ConstraintViolationException.class,
                        org.springframework.web.method.annotation.HandlerMethodValidationException.class})

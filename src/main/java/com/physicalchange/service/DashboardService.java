@@ -4,7 +4,6 @@ import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.repository.*;
 import com.physicalchange.security.*;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
@@ -12,16 +11,18 @@ import java.util.List;
 
 @Service
 public class DashboardService {
-    private final UserRepository users; private final AppointmentRepository appts;
+    private final AppointmentRepository appts;
     private final WorkoutAssignmentRepository assigns; private final ProgressEntryRepository progress; private final AccessService access;
-    public DashboardService(UserRepository u, AppointmentRepository a, WorkoutAssignmentRepository w, ProgressEntryRepository p, AccessService ac) {
-        users = u; appts = a; assigns = w; progress = p; access = ac;
+    private final ClientDirectory directory;
+    public DashboardService(AppointmentRepository a, WorkoutAssignmentRepository w, ProgressEntryRepository p, AccessService ac,
+                            ClientDirectory d) {
+        appts = a; assigns = w; progress = p; access = ac; directory = d;
     }
 
     @Transactional(readOnly = true)
     public TrainerDashboard trainer() {
         AuthUser me = access.current();
-        long clients = users.findByRoleAndTrainerId(Role.CLIENT, me.id(), PageRequest.of(0, 1)).getTotalElements();
+        long clients = directory.clientsOf(me.id()).size();   // ADMIN: todos los clientes (ClientDirectory)
         long upcoming = appts.countByTrainerIdAndStatusAndStartAtAfter(me.id(), "BOOKED", LocalDateTime.now());
         return new TrainerDashboard(clients, upcoming);
     }
