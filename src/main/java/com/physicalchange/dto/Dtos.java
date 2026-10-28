@@ -1,5 +1,6 @@
 package com.physicalchange.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.physicalchange.domain.Role;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
@@ -426,4 +427,13 @@ public final class Dtos {
     public record HiddenRequest(boolean hidden) {}
 
     public record ErrorResponse(Instant timestamp, int status, String error, String message) {}
+
+    // ---- Librería en el servidor (docs/api-libreria.md, T27) ----
+    public record LibraryItemRequest(@NotNull @Pattern(regexp = "CARDIO|VIDEO|RECIPE|NUTRITION_PLAN|PLAN_GROUP|FOOD") String kind,
+                                     @NotBlank @Size(max = 160) String name, @NotNull JsonNode data,
+                                     @Size(max = 4) List<@NotNull Long> fileIds) {}
+    public record LibraryItemDto(Long id, String kind, String name, JsonNode data, List<FileDto> files, String creator,
+                                 LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    public record LibraryPrefRequest(@NotNull JsonNode data) {}
+    public record LibraryPrefDto(String key, JsonNode data, LocalDateTime updatedAt) {}
 }
