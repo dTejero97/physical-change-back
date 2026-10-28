@@ -31,7 +31,7 @@ Contrato detallado de la sección Clientes: [`docs/api-clientes.md`](docs/api-cl
 | Invitaciones | `GET/POST /api/invitations`, `POST /api/invitations/link`, `POST /api/invitations/{id}/resend`; públicas (sin JWT): `GET /api/public/invitations/{token}`, `POST .../accept` |
 | Leads | `GET/POST /api/leads`, `DELETE /api/leads/{id}`, `POST /api/leads/{id}/invite` |
 | Comunidad | `/api/community/groups` (CRUD), `/api/community/groups/{id}/posts`, `POST /api/community/posts/{id}/like` |
-| Ejercicios | `GET/POST /api/exercises`, `DELETE /api/exercises/{id}` |
+| Ejercicios | `GET/POST /api/exercises` (`?q&muscle&size`, hasta 5000 por página), `DELETE /api/exercises/{id}`. Los globales incluyen `videoUrl`, `level`, `laterality`, `mechanics`, `zone` y `tags` (catálogo de 2.129 ejercicios, V8) |
 | Rutinas | `GET/POST /api/workouts`, `GET/PUT/DELETE /api/workouts/{id}`, ítems (series, reps, peso, descanso) en `/api/workouts/{id}/items` |
 | Asignación | `POST /api/workouts/assign`, `GET /api/my/assignments`, `POST /api/assignments/{id}/complete`, `GET /api/assignments/{id}/compliance` |
 | Registro de series | `POST /api/exercise-logs`, `GET /api/exercise-logs/client/{id}`, `DELETE /api/exercise-logs/{id}` |
@@ -43,9 +43,11 @@ Contrato detallado de la sección Clientes: [`docs/api-clientes.md`](docs/api-cl
 | Mensajes | `GET /api/messages/with/{userId}`, `POST /api/messages` |
 | Agenda | Tipos de sesión, eventos (sesión, reunión, recordatorio, privado; series recurrentes), reservas y cola, KPIs, cumpleaños, horarios de citas y actividad en `/api/agenda/…`. Contrato: [docs/api-agenda.md](docs/api-agenda.md) |
 | Librería V2 | Programas, documentos, formularios, plantillas (copiar a mi librería) y logros en `/api/library/…`. Contrato: [docs/api-libreria-v2.md](docs/api-libreria-v2.md) |
+| Negocio | Comprobantes, productos, planes, cupones, suscripciones, bonos, Datos de negocio e informes (`/api/receipts`, `/api/products`, `/api/subscription-plans`, `/api/coupons`, `/api/business/…`); servicios de la plataforma solo ADMIN (`/api/platform/…`). Contrato: [docs/api-negocio.md](docs/api-negocio.md) |
+| Physical AI | Estado, instrucciones, generadores y conversaciones en `/api/ai/…` (`AI_PROVIDER=none` responde 503). Contrato: [docs/api-ia.md](docs/api-ia.md) |
 | Archivos | `POST /api/files` (multipart, máx. 10 MB), subida directa a Cloudflare R2 `POST /api/files/uploads` + `POST /api/files/{id}/complete` (vídeos de hasta 500 MB), `DELETE /api/files/{id}`; descarga sin JWT con URL firmada `GET /api/public/files/{id}?exp&sig` (1 h; los archivos de R2 responden 302). Decisiones: `../docs/adr/ADR-001-almacenamiento-archivos.md` y `../docs/adr/ADR-005-cloudflare-r2.md` |
 
-Migraciones de esta versión: `V3__agenda.sql`, `V4__libreria_v2.sql` (catálogo del sistema: 46 logros y 13 plantillas) y `V5__almacenamiento_r2.sql`. Cada una lleva su reversión manual en la cabecera.
+Migraciones: `V3__agenda.sql`, `V4__libreria_v2.sql` (catálogo del sistema: 46 logros y 13 plantillas), `V5__almacenamiento_r2.sql`, `V6__negocio.sql`, `V7__physical_ai.sql` y `V8__catalogo_ejercicios_harbiz.sql` (2.129 ejercicios globales con vídeo, generada desde `ejercicios_harbiz_youtube.csv`). Cada una lleva su reversión manual en la cabecera.
 Tests: `mvn test` (H2 en modo PostgreSQL). H2 no reproduce todas las diferencias con PostgreSQL: valida también arrancando contra la base local (`ddl-auto=validate`).
 
 ## Despliegue (Render)
