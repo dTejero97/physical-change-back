@@ -14,7 +14,8 @@ public class ExerciseService {
     private final ExerciseRepository repo; private final AccessService access;
     public ExerciseService(ExerciseRepository r, AccessService a) { repo = r; access = a; }
 
-    private static ExerciseDto dto(Exercise e) { return new ExerciseDto(e.getId(), e.getName(), e.getMuscleGroup(), e.getDescription(), e.getOwnerId() == null); }
+    private static ExerciseDto dto(Exercise e) { return new ExerciseDto(e.getId(), e.getName(), e.getMuscleGroup(), e.getDescription(), e.getOwnerId() == null,
+            e.getVideoUrl(), e.getLevel(), e.getLaterality(), e.getMechanics(), e.getZone(), e.getTags()); }
 
     @Transactional(readOnly = true)
     public Page<ExerciseDto> search(String q, String muscle, Pageable p) {

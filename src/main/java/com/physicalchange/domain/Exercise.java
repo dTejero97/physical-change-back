@@ -21,4 +21,10 @@ public class Exercise {
     public void setDescription(String d) { this.description = d; }
     public Long getOwnerId() { return ownerId; }
     public void setOwnerId(Long o) { this.ownerId = o; }
+    public String getVideoUrl() { return videoUrl; }
+    public String getLevel() { return level; }
+    public String getLaterality() { return laterality; }
+    public String getMechanics() { return mechanics; }
+    public String getZone() { return zone; }
+    public String getTags() { return tags; }
 }

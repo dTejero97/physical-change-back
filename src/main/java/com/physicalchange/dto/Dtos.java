@@ -96,7 +96,8 @@ public final class Dtos {
     // ---- Ejercicios ----
     public record ExerciseRequest(@NotBlank @Size(max = 120) String name, @Size(max = 60) String muscleGroup,
                                   @Size(max = 2000) String description) {}
-    public record ExerciseDto(Long id, String name, String muscleGroup, String description, boolean global) {}
+    public record ExerciseDto(Long id, String name, String muscleGroup, String description, boolean global,
+                              String videoUrl, String level, String laterality, String mechanics, String zone, String tags) {}
 
     // ---- Rutinas ----
     public record WorkoutRequest(@NotBlank @Size(max = 120) String name, @Size(max = 2000) String notes) {}

@@ -1,6 +1,10 @@
 server:
   port: ${PORT:8080}
 spring:
+  data:
+    web:
+      pageable:
+        max-page-size: 5000   # el catálogo de ejercicios (~2.100) se carga entero en Librería
   application:
     name: physical-change-back
   datasource:
