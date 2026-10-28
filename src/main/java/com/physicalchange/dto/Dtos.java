@@ -435,5 +435,6 @@ public final class Dtos {
     public record LibraryItemDto(Long id, String kind, String name, JsonNode data, List<FileDto> files, String creator,
                                  LocalDateTime createdAt, LocalDateTime updatedAt) {}
     public record LibraryPrefRequest(@NotNull JsonNode data) {}
-    public record LibraryPrefDto(String key, JsonNode data, LocalDateTime updatedAt) {}
+    /** files: imágenes citadas en data como "file:<id>", con su URL firmada. */
+    public record LibraryPrefDto(String key, JsonNode data, LocalDateTime updatedAt, List<FileDto> files) {}
 }

@@ -83,8 +83,8 @@ public class LibraryItemService {
     public LibraryPrefDto pref(String key) {
         checkKey(key);
         return prefs.findById(new LibraryPref.Key(access.current().id(), key))
-                .map(p -> new LibraryPrefDto(key, read(p.getData()), p.getUpdatedAt()))
-                .orElseGet(() -> new LibraryPrefDto(key, json.createObjectNode(), null));
+                .map(p -> { JsonNode d = read(p.getData()); return new LibraryPrefDto(key, d, p.getUpdatedAt(), fileRefs(d)); })
+                .orElseGet(() -> new LibraryPrefDto(key, json.createObjectNode(), null, List.of()));
     }
 
     @Transactional
@@ -95,7 +95,20 @@ public class LibraryItemService {
         LibraryPref p = prefs.findById(new LibraryPref.Key(me, key)).orElseGet(() -> new LibraryPref(me, key));
         p.setData(text);
         prefs.save(p);
-        return new LibraryPrefDto(key, data, p.getUpdatedAt());
+        return new LibraryPrefDto(key, data, p.getUpdatedAt(), fileRefs(data));
+    }
+
+    /** Imágenes citadas como "file:<id>" en una preferencia (p. ej. la imagen de un ejercicio): URL firmada de las propias. */
+    private List<FileDto> fileRefs(JsonNode data) {
+        Set<Long> ids = new LinkedHashSet<>();
+        collectRefs(data, ids);
+        Long me = access.current().id();
+        return files.ownedAmong(ids, me).stream().map(f -> new FileDto(f, null, null, 0, files.url(f))).toList();
+    }
+
+    private static void collectRefs(JsonNode n, Set<Long> out) {
+        if (n.isTextual() && n.asText().matches("file:\\d{1,18}")) out.add(Long.parseLong(n.asText().substring(5)));
+        for (JsonNode c : n) collectRefs(c, out);
     }
 
     // ---------- internos ----------

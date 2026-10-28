@@ -130,6 +130,12 @@ class LibraryItemFlowTest {
         assertTrue(send("GET", "/api/library/prefs/EXERCISE_META", trainer, null, 200).get("data").get("12").get("favorite").asBoolean());
         assertTrue(send("GET", "/api/library/prefs/EXERCISE_META", otherTrainer, null, 200).get("data").isEmpty());
         send("PUT", "/api/library/prefs/OTRA", trainer, "{\"data\":{}}", 400);
+        // Imagen citada como file:<id>: URL firmada solo si es propia
+        long mine = image(trainer), other = image(otherTrainer);
+        JsonNode p = send("PUT", "/api/library/prefs/EXERCISE_META", trainer,
+                "{\"data\":{\"5\":{\"image\":\"file:" + mine + "\"},\"6\":{\"image\":\"file:" + other + "\"}}}", 200);
+        assertEquals(1, p.get("files").size());
+        assertEquals(mine, p.get("files").get(0).get("id").asLong());
         send("PUT", "/api/library/prefs/EXERCISE_META", trainer, "{\"data\":{\"1\":{\"image\":\"data:image/png;base64,AA\"}}}", 400);
     }
 }

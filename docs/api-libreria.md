@@ -48,11 +48,12 @@ Un documento JSON por profesional y clave, para metadatos que cuelgan de otros r
 
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
-| GET | `/api/library/prefs/{key}` | — | `{ key, data, updatedAt }`; `data = {}` si no existe |
-| PUT | `/api/library/prefs/{key}` | `{ data }` | `{ key, data, updatedAt }` |
+| GET | `/api/library/prefs/{key}` | — | `{ key, data, updatedAt, files }`; `data = {}` si no existe |
+| PUT | `/api/library/prefs/{key}` | `{ data }` | `{ key, data, updatedAt, files }` |
 
 `key`: `EXERCISE_META` (favoritos, etiquetas y vídeo por id de ejercicio) · `EXERCISE_TAGS` (mis etiquetas) · `WORKOUT_META` · `FOOD_META` (metadatos de alimentos de `/api/nutrition/foods`).
-Validación: objeto JSON de como máximo **512 KB**, sin `data:` URL (la imagen de un ejercicio se sube como archivo y se guarda su id en el metadato). Otra clave → 400.
+Validación: objeto JSON de como máximo **512 KB**, sin `data:` URL. Otra clave → 400.
+**Imágenes:** se suben con `POST /api/files` (IMAGE) y se citan dentro de `data` como texto `"file:<id>"`. La respuesta trae `files: [{ id, url }]` con la URL firmada de cada imagen citada que sea del profesional (las ajenas se ignoran). El frontend usa la misma convención dentro de `data` de los elementos, además de enviar sus `fileIds`. Una imagen sustituida en una preferencia no se borra sola: cuenta en la cuota hasta la limpieza periódica (Propuestas).
 
 ## Permisos y RGPD
 - `@PreAuthorize("hasAnyRole('ADMIN','TRAINER')")`. Un cliente no accede a esta API (la app del cliente, Fase 6, tendrá sus propias rutas de lectura).

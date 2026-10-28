@@ -161,6 +161,13 @@ public class FileService {
 
     public void removeById(Long id) { if (id != null) files.findById(id).ifPresent(this::remove); }
 
+    /** De esos ids, los archivos de ese dueño (sin excepción por los ajenos o inexistentes). */
+    @Transactional(readOnly = true)
+    public List<Long> ownedAmong(java.util.Collection<Long> ids, Long owner) {
+        if (ids.isEmpty()) return List.of();
+        return files.findAllById(ids).stream().filter(f -> owner.equals(f.getOwnerId())).map(StoredFile::getId).toList();
+    }
+
     public FileDto toDto(StoredFile f) { return new FileDto(f.getId(), f.getName(), f.getContentType(), f.getSizeBytes(), url(f.getId())); }
 
     /** Portada válida: clave predefinida o "file:<id>" de una imagen propia. */
