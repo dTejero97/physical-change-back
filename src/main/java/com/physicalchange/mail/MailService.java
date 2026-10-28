@@ -36,6 +36,15 @@ public class MailService {
                 "Crear mi cuenta", link);
     }
 
+    /** Invitación a unirse al equipo de un profesional como colaborador (ADR-011). */
+    public void teamInvitation(String to, String name, String ownerName, String token, int validDays) {
+        String link = publicUrl + "/equipo/invitacion/" + token;
+        send(to, ownerName + " te invita a su equipo en " + BRAND,
+                "Hola " + name + ",",
+                ownerName + " te ha añadido como colaborador de su equipo en " + BRAND + ". Elige tu contraseña para empezar (el enlace vale " + validDays + " días):",
+                "Unirme al equipo", link);
+    }
+
     public void passwordReset(String to, String name, String token, int validMinutes) {
         String link = publicUrl + "/restablecer/" + token;
         send(to, "Restablece tu contraseña de " + BRAND,

@@ -19,7 +19,7 @@ public class ExerciseService {
 
     @Transactional(readOnly = true)
     public Page<ExerciseDto> search(String q, String muscle, Pageable p) {
-        return repo.search(access.current().id(), blank(q), blank(muscle), p).map(ExerciseService::dto);
+        return repo.search(access.workspaceId(), blank(q), blank(muscle), p).map(ExerciseService::dto);
     }
     private static String blank(String s) { return s == null || s.isBlank() ? null : s; }
 
@@ -27,7 +27,7 @@ public class ExerciseService {
     public ExerciseDto create(ExerciseRequest r) {
         Exercise e = new Exercise();
         e.setName(r.name()); e.setMuscleGroup(r.muscleGroup()); e.setDescription(r.description());
-        e.setOwnerId(access.current().id());
+        e.setOwnerId(access.workspaceId());
         return dto(repo.save(e));
     }
 

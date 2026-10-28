@@ -442,4 +442,14 @@ public final class Dtos {
     public record ForgotPasswordRequest(@NotBlank @Email @Size(max = 160) String email) {}
     public record ResetPasswordRequest(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{43}") String token,
                                        @NotBlank @Size(min = 8, max = 72) String newPassword) {}
+
+    // ---- Equipo (docs/api-equipo.md, ADR-011) ----
+    public record TeamPermissionsDto(boolean assignRoutines, boolean manageAppointments, boolean messageClients) {}
+    public record TeamMemberDto(Long id, String fullName, String email, String status, LocalDateTime invitedAt, LocalDateTime activatedAt,
+                                int activeClients, List<Long> clientIds, TeamPermissionsDto permissions) {}
+    public record TeamInviteRequest(@NotBlank @Email @Size(max = 160) String email, @NotBlank @Size(max = 120) String fullName) {}
+    public record TeamClientsRequest(@NotNull @Size(max = 500) List<@NotNull Long> clientIds) {}
+    public record TeamMeDto(String ownerName, TeamPermissionsDto permissions, List<Long> clientIds) {}
+    public record PublicTeamInvitationDto(String ownerName, String email, String fullName) {}
+    public record TeamAcceptRequest(@NotBlank @Size(min = 8, max = 72) String password) {}
 }

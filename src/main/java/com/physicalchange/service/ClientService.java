@@ -9,6 +9,8 @@ import org.springframework.data.domain.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.Comparator;
+import java.util.List;
 
 @Service
 public class ClientService {
@@ -20,6 +22,13 @@ public class ClientService {
     @Transactional(readOnly = true)
     public Page<UserDto> list(Pageable p) {
         AuthUser me = access.current();
+        if (me.role() == Role.COLLABORATOR) {
+            // Solo sus clientes asignados y activos (ADR-011)
+            List<AppUser> mine = users.findAllById(access.assignedClients()).stream()
+                    .filter(u -> u.getRole() == Role.CLIENT && u.isActive()).sorted(Comparator.comparing(AppUser::getFullName)).toList();
+            int from = (int) Math.min(p.getOffset(), mine.size()), to = Math.min(from + p.getPageSize(), mine.size());
+            return new PageImpl<>(mine.subList(from, to), p, mine.size()).map(AuthService::toDto);
+        }
         Page<AppUser> page = me.role() == Role.ADMIN ? users.findAllVisibleClients(p) : users.findVisibleClients(me.id(), p);
         return page.map(AuthService::toDto);
     }

@@ -33,7 +33,7 @@ public class WorkoutService {
 
     @Transactional(readOnly = true)
     public Page<WorkoutDto> list(Pageable p) {
-        return workouts.findByTrainerId(access.current().id(), p).map(WorkoutMapper::toDto);
+        return workouts.findByTrainerId(access.workspaceId(), p).map(WorkoutMapper::toDto);
     }
 
     @Transactional(readOnly = true)
@@ -45,7 +45,7 @@ public class WorkoutService {
     @Transactional
     public WorkoutDto create(WorkoutRequest r) {
         Workout w = new Workout();
-        w.setTrainerId(access.current().id());
+        w.setTrainerId(access.workspaceId());
         w.setName(r.name());
         w.setNotes(r.notes());
         return WorkoutMapper.toDto(workouts.save(w));
@@ -61,6 +61,7 @@ public class WorkoutService {
 
     @Transactional
     public void delete(Long id) {
+        if (access.current().role() == Role.COLLABORATOR) throw new ForbiddenException("Los colaboradores no pueden borrar rutinas");
         Workout w = ownedWorkout(id);
         if (assignments.countByWorkoutId(id) > 0) {
             throw new ConflictException("La rutina tiene asignaciones. Quítalas antes de borrarla");
@@ -106,6 +107,8 @@ public class WorkoutService {
         Workout w = workouts.findById(r.workoutId()).orElseThrow(() -> new NotFoundException("Entrenamiento no encontrado"));
         access.assertOwnerOrAdmin(w.getTrainerId());
         access.assertCanAccessClient(r.clientId());
+        if (access.current().role() == Role.COLLABORATOR)
+            access.assertPermission(access.collaborator().isCanAssignRoutines(), "asignar rutinas");
         WorkoutAssignment a = new WorkoutAssignment();
         a.setWorkoutId(w.getId());
         a.setClientId(r.clientId());
@@ -184,7 +187,7 @@ public class WorkoutService {
     private Exercise visibleExercise(Long exerciseId) {
         Exercise e = exercises.findById(exerciseId).orElseThrow(() -> new NotFoundException("Ejercicio no encontrado"));
         AuthUser me = access.current();
-        if (e.getOwnerId() != null && me.role() != Role.ADMIN && !me.id().equals(e.getOwnerId())) {
+        if (e.getOwnerId() != null && me.role() != Role.ADMIN && !access.workspaceId().equals(e.getOwnerId())) {
             throw new ForbiddenException("Ejercicio de otro entrenador");
         }
         return e;

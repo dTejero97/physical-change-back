@@ -15,7 +15,7 @@ public class ExerciseController {
     public ExerciseController(ExerciseService s) { svc = s; }
 
     @GetMapping public Page<ExerciseDto> search(@RequestParam(required = false) String q, @RequestParam(required = false) String muscle, Pageable p) { return svc.search(q, muscle, p); }
-    @PostMapping @PreAuthorize("hasAnyRole('ADMIN','TRAINER')") @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping @PreAuthorize("hasAnyRole('ADMIN','TRAINER','COLLABORATOR')") @ResponseStatus(HttpStatus.CREATED)
     public ExerciseDto create(@Valid @RequestBody ExerciseRequest r) { return svc.create(r); }
     @DeleteMapping("/{id}") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) { svc.delete(id); }

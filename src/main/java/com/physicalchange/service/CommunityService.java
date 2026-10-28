@@ -40,6 +40,7 @@ public class CommunityService {
             case ADMIN -> groups.findAllByOrderByCreatedAtDesc();
             case TRAINER -> groups.findByTrainerIdOrderByCreatedAtDesc(me.id());
             case CLIENT -> groups.findByMember(me.id());
+            case COLLABORATOR -> throw new ForbiddenException("La comunidad no está disponible para colaboradores");
         };
         return list.stream().map(this::toDto).toList();
     }

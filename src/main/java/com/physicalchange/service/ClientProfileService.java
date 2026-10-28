@@ -45,7 +45,9 @@ public class ClientProfileService {
     @Transactional
     public List<ClientProfileDto> list() {
         AuthUser me = access.current();
-        List<AppUser> clients = me.role() == Role.ADMIN ? users.findByRole(Role.CLIENT) : users.findByRoleAndTrainerId(Role.CLIENT, me.id());
+        List<AppUser> clients = me.role() == Role.ADMIN ? users.findByRole(Role.CLIENT)
+                : me.role() == Role.COLLABORATOR ? users.findAllById(access.assignedClients()).stream().filter(u -> u.getRole() == Role.CLIENT).toList()
+                : users.findByRoleAndTrainerId(Role.CLIENT, me.id());
         if (clients.isEmpty()) return List.of();
         List<Long> ids = clients.stream().map(AppUser::getId).toList();
 
