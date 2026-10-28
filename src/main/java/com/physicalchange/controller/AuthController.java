@@ -24,5 +24,8 @@ public class AuthController {
     @PutMapping("/me") public UserDto updateMe(@Valid @RequestBody UpdateProfileRequest r) { return auth.updateProfile(r); }
 
     /** Configuración: cambiar la contraseña (requiere la actual). */
-    @PutMapping("/password") public void changePassword(@Valid @RequestBody ChangePasswordRequest r) { auth.changePassword(r); }
+    @PutMapping("/password") public LoginResponse changePassword(@Valid @RequestBody ChangePasswordRequest r) { return auth.changePassword(r); }
+
+    /** Cierra la sesión en el servidor (y en los demás dispositivos): el token deja de valer al momento. */
+    @PostMapping("/logout") @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT) public void logout() { auth.logout(); }
 }

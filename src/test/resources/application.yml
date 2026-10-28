@@ -18,3 +18,5 @@ app:
   admin:
     email: admin
     password: admin
+  rate-limit:
+    enabled: false          # los límites por IP se prueban en RateLimitTest con valores bajos

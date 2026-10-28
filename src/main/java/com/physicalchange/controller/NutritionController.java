@@ -17,7 +17,7 @@ public class NutritionController {
 
     /** El entrenador activa o desactiva el servicio de nutrición. */
     @PutMapping("/service") @PreAuthorize("hasRole('TRAINER')")
-    public NutritionServiceRequest service(@RequestBody NutritionServiceRequest r) { return svc.setService(r.enabled()); }
+    public NutritionServiceRequest service(@Valid @RequestBody NutritionServiceRequest r) { return svc.setService(r.enabled()); }
 
     @GetMapping("/foods") public Page<FoodDto> foods(@RequestParam(required = false) String q, Pageable p) { return svc.searchFoods(q, p); }
     @PostMapping("/foods") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')") @ResponseStatus(HttpStatus.CREATED)

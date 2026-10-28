@@ -52,7 +52,21 @@ app:
   admin:
     email: ${ADMIN_USER:admin}          # usuario de acceso del administrador
     password: ${ADMIN_PASSWORD:admin}   # se aplica solo al crear el admin por primera vez
-    reset-password: ${ADMIN_RESET_PASSWORD:}   # si se define, fija la contraseña del admin en cada arranque (temporal)
+    reset-password: ${ADMIN_RESET_PASSWORD:}
+  env: ${APP_ENV:dev}                  # prod en Render: exige ADMIN_PASSWORD fuerte (T141)
+  rate-limit:                          # T141 (Nota de Seguridad T140): límites en memoria por IP y por usuario
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    trust-proxy: true                  # IP real = última entrada de X-Forwarded-For (proxy de Render)
+    login-per-ip-per-minute: 10
+    login-failures-per-user: 5
+    login-lock-minutes: 15
+    public-per-ip-per-minute: 300
+    api-per-ip-per-minute: 600   # si se define, fija la contraseña del admin en cada arranque (temporal)
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}      # en producción SWAGGER_ENABLED=false (Nota de Seguridad T140, Medio 2)
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
 management:
   endpoints:
     web:

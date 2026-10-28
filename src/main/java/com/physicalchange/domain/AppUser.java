@@ -16,12 +16,18 @@ public class AppUser {
     @Column(nullable = false) private Integer active = 1;
     /** El entrenador ofrece nutrición como servicio (solo TRAINER). */
     @Column(name = "NUTRITION_ENABLED", nullable = false) private Integer nutritionEnabled = 0;
+    /** Sube al desactivar, cambiar la contraseña o cerrar sesión: invalida los JWT emitidos antes (T141). */
+    @Column(name = "TOKEN_VERSION", nullable = false) private Integer tokenVersion = 0;
 
     public Long getId() { return id; }
     public String getEmail() { return email; }
     public void setEmail(String e) { this.email = e; }
     public String getPasswordHash() { return passwordHash; }
-    public void setPasswordHash(String p) { this.passwordHash = p; }
+    /** Cambiar una contraseña ya existente cierra todas las sesiones abiertas. */
+    public void setPasswordHash(String p) {
+        if (this.passwordHash != null && !this.passwordHash.equals(p)) revokeSessions();
+        this.passwordHash = p;
+    }
     public String getFullName() { return fullName; }
     public void setFullName(String n) { this.fullName = n; }
     public Role getRole() { return role; }
@@ -29,7 +35,13 @@ public class AppUser {
     public Long getTrainerId() { return trainerId; }
     public void setTrainerId(Long t) { this.trainerId = t; }
     public boolean isActive() { return active != null && active == 1; }
-    public void setActive(boolean a) { this.active = a ? 1 : 0; }
+    /** Desactivar (archivar) cierra todas las sesiones abiertas. */
+    public void setActive(boolean a) {
+        if (!a && isActive()) revokeSessions();
+        this.active = a ? 1 : 0;
+    }
+    public int getTokenVersion() { return tokenVersion == null ? 0 : tokenVersion; }
+    public void revokeSessions() { this.tokenVersion = getTokenVersion() + 1; }
     public boolean isNutritionEnabled() { return nutritionEnabled != null && nutritionEnabled == 1; }
     public void setNutritionEnabled(boolean n) { this.nutritionEnabled = n ? 1 : 0; }
 }

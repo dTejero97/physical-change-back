@@ -14,7 +14,7 @@ public final class Dtos {
 
     // ---- Auth y perfil ----
     /** username: email o el usuario "admin". */
-    public record LoginRequest(@NotBlank @Size(max = 160) String username, @NotBlank String password) {}
+    public record LoginRequest(@NotBlank @Size(max = 160) String username, @NotBlank @Size(max = 72) String password) {}
     public record LoginResponse(String token, UserDto user) {}
     /** nutritionEnabled: en TRAINER es su propio servicio; en CLIENT indica si su entrenador ofrece nutrición. */
     public record UserDto(Long id, String email, String fullName, Role role, Long trainerId, boolean nutritionEnabled) {}

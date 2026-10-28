@@ -19,6 +19,6 @@ public class ScheduleController {
     @GetMapping("/{id}") public ScheduleDetailDto get(@PathVariable Long id) { return svc.get(id); }
     @PostMapping @ResponseStatus(HttpStatus.CREATED) public ScheduleDto create(@Valid @RequestBody ScheduleRequest r) { return svc.create(r); }
     @PutMapping("/{id}") public ScheduleDto update(@PathVariable Long id, @Valid @RequestBody ScheduleRequest r) { return svc.update(id, r); }
-    @PatchMapping("/{id}/active") public ScheduleDto setActive(@PathVariable Long id, @RequestBody ActiveRequest r) { return svc.setActive(id, r); }
+    @PatchMapping("/{id}/active") public ScheduleDto setActive(@PathVariable Long id, @Valid @RequestBody ActiveRequest r) { return svc.setActive(id, r); }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void delete(@PathVariable Long id) { svc.delete(id); }
 }

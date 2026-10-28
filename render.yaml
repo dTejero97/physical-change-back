@@ -16,6 +16,10 @@ services:
         value: admin
       - key: ADMIN_PASSWORD        # contraseña del administrador
         sync: false
+      - key: APP_ENV               # prod: el backend no arranca con una ADMIN_PASSWORD débil (T141)
+        value: prod
+      - key: SWAGGER_ENABLED       # false: sin /swagger-ui ni /v3/api-docs públicos en producción (T141)
+        value: "false"
       - key: CORS_ALLOWED_ORIGINS  # URL de Vercel, p. ej. https://physical-change.vercel.app
         sync: false
       # ---- Archivos en Cloudflare R2 (ADR-005, MANUAL-DESPLIEGUE.md Parte 8) ----

@@ -1,6 +1,7 @@
 package com.physicalchange.config;
 
 import com.physicalchange.security.JwtAuthFilter;
+import com.physicalchange.security.RateLimitFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.http.HttpStatus;
@@ -19,7 +20,7 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
     @Bean
-    SecurityFilterChain chain(HttpSecurity http, JwtAuthFilter jwt) throws Exception {
+    SecurityFilterChain chain(HttpSecurity http, JwtAuthFilter jwt, RateLimitFilter rateLimit) throws Exception {
         http.csrf(c -> c.disable())
             .cors(c -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -30,6 +31,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/clients/**", "/api/workouts/**", "/api/reports/**", "/api/library/**", "/api/files/**").hasAnyRole("ADMIN", "TRAINER")
                 .anyRequest().authenticated())
+            .addFilterBefore(rateLimit, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

@@ -21,14 +21,23 @@ public class JwtService {
         this.expirationMs = minutes * 60_000;
     }
 
-    public String generate(AuthUser u) {
+    public String generate(AuthUser u) { return generate(u, 0); }
+
+    /** tv = token_version del usuario: si cambia, el token deja de valer (T141). */
+    public String generate(AuthUser u, int tokenVersion) {
         Date now = new Date();
         return Jwts.builder().subject(String.valueOf(u.id())).claim("email", u.email()).claim("role", u.role().name())
-                .issuedAt(now).expiration(new Date(now.getTime() + expirationMs)).signWith(key).compact();
+                .claim("tv", tokenVersion).issuedAt(now).expiration(new Date(now.getTime() + expirationMs)).signWith(key).compact();
     }
 
-    public AuthUser parse(String token) {
+    public AuthUser parse(String token) { return parseWithVersion(token).user(); }
+
+    public Parsed parseWithVersion(String token) {
         Claims c = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
-        return new AuthUser(Long.valueOf(c.getSubject()), c.get("email", String.class), Role.valueOf(c.get("role", String.class)));
+        Integer tv = c.get("tv", Integer.class);
+        return new Parsed(new AuthUser(Long.valueOf(c.getSubject()), c.get("email", String.class), Role.valueOf(c.get("role", String.class))),
+                tv == null ? 0 : tv);
     }
+
+    public record Parsed(AuthUser user, int tokenVersion) {}
 }

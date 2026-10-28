@@ -24,6 +24,10 @@ public class GlobalExceptionHandler {
         return e.retryAfterSeconds() == null ? r
                 : ResponseEntity.status(r.getStatusCode()).header("Retry-After", String.valueOf(e.retryAfterSeconds())).body(r.getBody());
     }
+    @ExceptionHandler(TooManyRequestsException.class) ResponseEntity<ErrorResponse> tm(TooManyRequestsException e) {
+        ResponseEntity<ErrorResponse> r = build(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
+        return ResponseEntity.status(r.getStatusCode()).header("Retry-After", String.valueOf(e.retryAfterSeconds())).body(r.getBody());
+    }
     /** Validación de parámetros de ruta (p. ej. formato del token de invitación). */
     @ExceptionHandler({jakarta.validation.ConstraintViolationException.class,
                        org.springframework.web.method.annotation.HandlerMethodValidationException.class})

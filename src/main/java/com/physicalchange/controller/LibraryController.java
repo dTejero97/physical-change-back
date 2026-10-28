@@ -58,5 +58,5 @@ public class LibraryController {
     @PostMapping("/achievements") @ResponseStatus(HttpStatus.CREATED) public AchievementDto createAchievement(@Valid @RequestBody AchievementRequest r) { return achievements.create(r); }
     @PutMapping("/achievements/{id}") public AchievementDto updateAchievement(@PathVariable Long id, @Valid @RequestBody AchievementRequest r) { return achievements.update(id, r); }
     @DeleteMapping("/achievements/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void deleteAchievement(@PathVariable Long id) { achievements.delete(id); }
-    @PatchMapping("/achievements/{id}/hidden") public AchievementDto setHidden(@PathVariable Long id, @RequestBody HiddenRequest r) { return achievements.setHidden(id, r); }
+    @PatchMapping("/achievements/{id}/hidden") public AchievementDto setHidden(@PathVariable Long id, @Valid @RequestBody HiddenRequest r) { return achievements.setHidden(id, r); }
 }

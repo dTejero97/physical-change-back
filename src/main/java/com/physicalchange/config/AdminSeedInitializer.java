@@ -25,16 +25,24 @@ public class AdminSeedInitializer implements ApplicationRunner {
     private final String adminEmail;
     private final String adminPassword;
     private final String resetPassword;
+    private final boolean production;
 
     public AdminSeedInitializer(UserRepository users, PasswordEncoder encoder,
                                 @Value("${app.admin.email}") String adminEmail,
                                 @Value("${app.admin.password}") String adminPassword,
-                                @Value("${app.admin.reset-password:}") String resetPassword) {
+                                @Value("${app.admin.reset-password:}") String resetPassword,
+                                @Value("${app.env:dev}") String env) {
         this.users = users;
         this.encoder = encoder;
         this.adminEmail = adminEmail.toLowerCase();
         this.adminPassword = adminPassword;
         this.resetPassword = resetPassword;
+        this.production = !"dev".equalsIgnoreCase(env);
+    }
+
+    /** Fuera de desarrollo no se acepta una contraseña de admin débil ni la de por defecto (Nota de Seguridad T140, Alto 2). */
+    static boolean weak(String p) {
+        return p == null || p.length() < 12 || p.equalsIgnoreCase("admin") || p.equalsIgnoreCase("password");
     }
 
     /**
@@ -47,6 +55,8 @@ public class AdminSeedInitializer implements ApplicationRunner {
         var existing = users.findByEmailIgnoreCase(adminEmail);
         if (existing.isPresent()) {
             if (resetPassword != null && !resetPassword.isBlank()) {
+                if (production && weak(resetPassword))
+                    throw new IllegalStateException("ADMIN_RESET_PASSWORD es demasiado débil: usa al menos 12 caracteres");
                 AppUser admin = existing.get();
                 admin.setPasswordHash(encoder.encode(resetPassword));
                 users.save(admin);
@@ -54,6 +64,8 @@ public class AdminSeedInitializer implements ApplicationRunner {
             }
             return;
         }
+        if (production && weak(adminPassword))
+            throw new IllegalStateException("ADMIN_PASSWORD no está definida o es demasiado débil (mínimo 12 caracteres, distinta de \"admin\")");
         AppUser admin = new AppUser();
         admin.setEmail(adminEmail);
         admin.setFullName("Administrador");
