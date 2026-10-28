@@ -11,6 +11,13 @@ public class Exercise {
     @Column(name = "MUSCLE_GROUP", length = 60) private String muscleGroup;
     @Column(length = 2000) private String description;
     @Column(name = "OWNER_ID") private Long ownerId; // null = ejercicio global
+    // Datos del catálogo importado (V8); null en los ejercicios creados a mano.
+    @Column(name = "VIDEO_URL", length = 200) private String videoUrl;
+    @Column(length = 20) private String level;
+    @Column(length = 60) private String laterality;
+    @Column(length = 20) private String mechanics;
+    @Column(length = 60) private String zone;
+    @Column(length = 500) private String tags; // etiquetas separadas por "; "
 
     public Long getId() { return id; }
     public String getName() { return name; }
