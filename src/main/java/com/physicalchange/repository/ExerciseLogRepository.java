@@ -14,8 +14,8 @@ public interface ExerciseLogRepository extends JpaRepository<ExerciseLog, Long> 
     @Query("select l.clientId, max(l.logDate) from ExerciseLog l where l.clientId in :ids group by l.clientId")
     List<Object[]> lastLogDates(@Param("ids") java.util.Collection<Long> clientIds);
 
-    @Query("select l from ExerciseLog l where l.clientId = :client and (:exercise is null or l.exerciseId = :exercise) " +
-           "and (:from is null or l.logDate >= :from) order by l.logDate asc, l.setNumber asc")
+    @Query("select l from ExerciseLog l where l.clientId = :client and (cast(:exercise as Long) is null or l.exerciseId = :exercise) " +
+           "and (cast(:from as LocalDate) is null or l.logDate >= :from) order by l.logDate asc, l.setNumber asc")
     List<ExerciseLog> search(@Param("client") Long clientId, @Param("exercise") Long exerciseId,
                              @Param("from") LocalDate from);
 }
