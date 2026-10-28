@@ -117,6 +117,15 @@ class LibraryItemFlowTest {
         send("GET", "/api/library/prefs/EXERCISE_META", client, null, 403);
     }
 
+    @Test void soloImagenesYVideosPropiosComoArchivo() throws Exception {
+        var req = multipart("/api/files").file(new MockMultipartFile("file", "doc.pdf", "application/pdf", "%PDF-1.4 x".getBytes())).param("purpose", "DOCUMENT");
+        req.header("Authorization", trainer);
+        long doc = read(mvc.perform(req).andExpect(status().isCreated()).andReturn()).get("id").asLong();
+        send("POST", "/api/library/items", trainer, "{\"kind\":\"VIDEO\",\"name\":\"x\",\"data\":{},\"fileIds\":[" + doc + "]}", 400);
+        long img = image(trainer);
+        send("POST", "/api/library/items", trainer, "{\"kind\":\"VIDEO\",\"name\":\"Portada\",\"data\":{},\"fileIds\":[" + img + "]}", 201);
+    }
+
     @Test void unaImagenSoloPerteneceAUnElemento() throws Exception {
         long foto = image(trainer);
         send("POST", "/api/library/items", trainer, "{\"kind\":\"RECIPE\",\"name\":\"A\",\"data\":{},\"fileIds\":[" + foto + "]}", 201);

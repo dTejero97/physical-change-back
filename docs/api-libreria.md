@@ -31,12 +31,12 @@ Por eso se guardan como **documento JSON por elemento** (`library_item.data`), c
 
 Validación (400 con mensaje):
 - `data` debe ser un objeto JSON de como máximo **200 KB** serializado y **sin** cadenas que empiecen por `data:` ("Las imágenes se suben como archivo").
-- `fileIds`: cada uno debe ser un archivo propio con `purpose = IMAGE` (si no, 404). Al actualizar, los archivos que dejan de estar enlazados se borran.
+- `fileIds`: cada uno debe ser un archivo propio (si no, 403/404) ya subido, con `purpose = IMAGE`; en `VIDEO` también se admite `purpose = VIDEO` (vídeo propio subido a R2 con `POST /api/files/uploads`, T93). Otro tipo → 400. Al actualizar, los archivos que dejan de estar enlazados se borran.
 - Máximo **2.000 elementos por profesional y tipo** (409 "Has llegado al máximo de elementos de este tipo").
 
 Forma de `data` por tipo (la valida el frontend; el servidor solo exige objeto, tamaño y sin `data:`). Son las interfaces de `physical-change-front` sin `id`, `creator` ni fechas:
 - `CARDIO`: `{ cover }` (`Cardio` en `actividad-data.service.ts`; la portada subida pasa a `fileIds[0]`).
-- `VIDEO`: `{ url, instructions, tags, visibility, clientTags, visible, thumb, emoji, duration }` (`VideoItem`).
+- `VIDEO`: `{ url (YouTube/Vimeo o "file:<id>" del vídeo propio), instructions, tags, visibility, clientTags, visible, thumb, emoji, duration }` (`VideoItem`).
 - `RECIPE`: `{ emoji, thumb, tags, minutes, servings, category, instructions, items, ingredients, perServing, allergens, diet, mediaType, videoUrl, linkUrl, visible }` (`Recipe`; las fotos son `fileIds`).
 - `NUTRITION_PLAN`: `{ description, type, emoji, meals, targets, days }` (`LibPlan`; `days` guarda ids de `library_item`).
 - `PLAN_GROUP`: `{ description, planIds }` (`PlanGroup`).

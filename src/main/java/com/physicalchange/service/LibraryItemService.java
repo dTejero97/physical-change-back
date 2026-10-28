@@ -118,7 +118,11 @@ public class LibraryItemService {
         i.setData(validate(r.data(), ITEM_MAX_BYTES, "El contenido supera el tamaño máximo (200 KB)"));
         List<Long> ids = r.fileIds() == null ? List.of() : r.fileIds().stream().distinct().toList();
         for (Long f : ids) {
-            files.owned(f, "IMAGE");
+            // Un vídeo de la Librería puede llevar su propio archivo de vídeo (subido a R2, T93); el resto, solo imágenes.
+            StoredFile sf = files.owned(f, null);
+            boolean ok = "IMAGE".equals(sf.getPurpose()) || ("VIDEO".equals(i.getKind()) && "VIDEO".equals(sf.getPurpose()));
+            if (!ok) throw new BadRequestException("El archivo no es del tipo esperado");
+            if (!"READY".equals(sf.getStatus())) throw new BadRequestException("El archivo todavía no se ha subido");
             if (items.fileUsedElsewhere(f, itemId == null ? -1L : itemId)) throw new ConflictException("Esa imagen ya pertenece a otro elemento");
         }
         i.getFileIds().clear();
