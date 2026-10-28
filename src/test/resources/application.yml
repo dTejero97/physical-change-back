@@ -10,6 +10,11 @@ spring:
     hibernate:
       ddl-auto: create-drop
 app:
+  public-url: http://localhost:4200
+  mail:
+    provider: log
+    from: Physical Change <noreply@test.local>
+    support: soporte@test.local
   jwt:
     secret: test-secret-test-secret-test-secret-123456
     expiration-minutes: 10

@@ -16,7 +16,7 @@ import java.util.Objects;
 
 /**
  * Invitaciones de clientes. Por email: un solo uso. Enlace genérico (sin email): reutilizable hasta caducar.
- * No hay servidor de correo: el profesional comparte el enlace <front>/invitacion/<token>.
+ * Las de email se envían por correo al crearlas y al reenviarlas (T137); el enlace <front>/invitacion/<token> se puede compartir igualmente.
  */
 @Service
 public class InvitationService {
@@ -33,12 +33,13 @@ public class InvitationService {
     private final AccessService access;
     private final SubscriptionPlanRepository plans;
     private final SubscriptionService subscriptions;
+    private final com.physicalchange.mail.MailService mail;
 
     public InvitationService(ClientInvitationRepository i, ClientTagRepository t, UserRepository u, ClientProfileService p,
                              PasswordEncoder e, JwtService j, AuthService a, AccessService ac, SubscriptionPlanRepository pl,
-                             SubscriptionService s) {
+                             SubscriptionService s, com.physicalchange.mail.MailService m) {
         invitations = i; tags = t; users = u; profiles = p; enc = e; jwt = j; auth = a; access = ac;
-        plans = pl; subscriptions = s;
+        plans = pl; subscriptions = s; mail = m;
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +62,9 @@ public class InvitationService {
         i.setEmail(email);
         i.setName(r.name().trim());
         i.setPlanName(r.planName() == null || r.planName().isBlank() ? null : r.planName().trim());
-        return toDto(invitations.save(i));
+        ClientInvitation saved = invitations.save(i);
+        sendMail(saved);
+        return toDto(saved);
     }
 
     /** Enlace genérico reutilizable ("Generar enlace de invitación"). */
@@ -71,7 +74,7 @@ public class InvitationService {
         return toDto(invitations.save(base(me.id(), r == null ? null : r.tagId(), r == null ? null : r.planId())));
     }
 
-    /** Renueva fecha y caducidad (no envía correo: no hay SMTP configurado). */
+    /** Renueva fecha y caducidad y vuelve a enviar el correo. */
     @Transactional
     public InvitationDto resend(Long id) {
         ClientInvitation i = owned(id);
@@ -79,7 +82,13 @@ public class InvitationService {
         LocalDateTime now = LocalDateTime.now();
         i.setInvitedAt(now);
         i.setExpiresAt(now.plusDays(VALID_DAYS));
+        if (i.getEmail() != null) sendMail(i);
         return toDto(i);
+    }
+
+    private void sendMail(ClientInvitation i) {
+        String trainer = users.findById(i.getTrainerId()).map(AppUser::getFullName).orElse("Tu entrenador");
+        mail.invitation(i.getEmail(), i.getName(), trainer, i.getToken(), VALID_DAYS);
     }
 
     @Transactional

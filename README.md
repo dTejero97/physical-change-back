@@ -28,6 +28,9 @@ Contrato detallado de la sección Clientes: [`docs/api-clientes.md`](docs/api-cl
 | Auth y perfil | `POST /api/auth/login`, `GET/PUT /api/auth/me`, `PUT /api/auth/password` |
 | Clientes | `GET/POST /api/clients`, `PUT /api/clients/{id}`, ficha: `GET /api/clients/profiles`, `PUT /api/clients/{id}/profile`, `DELETE /api/clients/{id}` (borrado lógico) |
 | Etiquetas | `GET/POST /api/tags`, `PUT/DELETE /api/tags/{id}`, asignación en `/api/tags/{id}/clients` |
+| Contraseña olvidada | Públicas (sin JWT): `POST /api/public/auth/forgot-password` (siempre 204, máx. 3 correos por hora y email), `POST /api/public/auth/reset-password` (enlace de un solo uso, 60 min; cierra todas las sesiones) |
+| Sesión | `POST /api/auth/logout` (invalida el token en el servidor), `PUT /api/auth/password` (devuelve una sesión nueva y cierra las demás) |
+| Correo | Proveedor tras `MailSender`: `MAIL_PROVIDER=log` (por defecto, solo escribe en el log) o `resend`. Invitaciones por email y recuperación de contraseña. Ver `../MANUAL-DESPLIEGUE.md` Parte 10 |
 | Invitaciones | `GET/POST /api/invitations`, `POST /api/invitations/link`, `POST /api/invitations/{id}/resend`; públicas (sin JWT): `GET /api/public/invitations/{token}`, `POST .../accept` |
 | Leads | `GET/POST /api/leads`, `DELETE /api/leads/{id}`, `POST /api/leads/{id}/invite` |
 | Comunidad | `/api/community/groups` (CRUD), `/api/community/groups/{id}/posts`, `POST /api/community/posts/{id}/like` |

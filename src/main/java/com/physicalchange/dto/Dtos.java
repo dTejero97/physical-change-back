@@ -437,4 +437,9 @@ public final class Dtos {
     public record LibraryPrefRequest(@NotNull JsonNode data) {}
     /** files: imágenes citadas en data como "file:<id>", con su URL firmada. */
     public record LibraryPrefDto(String key, JsonNode data, LocalDateTime updatedAt, List<FileDto> files) {}
+
+    // ---- Recuperación de contraseña (T137) ----
+    public record ForgotPasswordRequest(@NotBlank @Email @Size(max = 160) String email) {}
+    public record ResetPasswordRequest(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{43}") String token,
+                                       @NotBlank @Size(min = 8, max = 72) String newPassword) {}
 }

@@ -24,6 +24,12 @@ spring:
       max-file-size: 10MB      # ADR-001: límite por archivo (los vídeos van directos a R2, ADR-005)
       max-request-size: 11MB
 app:
+  public-url: ${PUBLIC_APP_URL:http://localhost:4200}   # URL del frontend para los enlaces de los correos (T137)
+  mail:                                 # T137: proveedor tras una interfaz; ver MANUAL-DESPLIEGUE.md Parte 10
+    provider: ${MAIL_PROVIDER:log}      # log = no envía, solo escribe en el log (desarrollo) | resend
+    resend-api-key: ${RESEND_API_KEY:}  # secreto: solo en Render
+    from: ${MAIL_FROM:Physical Change <noreply@phisicalchange.com>}
+    support: ${MAIL_SUPPORT:soporte@phisicalchange.com}
   jwt:
     secret: ${JWT_SECRET}            # obligatorio, mínimo 32 caracteres
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:120}
