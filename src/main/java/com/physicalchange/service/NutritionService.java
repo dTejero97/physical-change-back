@@ -68,11 +68,11 @@ public class NutritionService {
                 .filter(c -> me.equals(access.nutritionResponsibleOf(c))).map(AuthService::toDto).toList();
     }
 
-    /** Profesionales que se pueden asignar como responsables de nutrición (para el ADMIN). */
+    /** Profesionales activos y sus servicios (para el ADMIN): solo los que ofrecen nutrición se pueden asignar como nutricionistas. */
     @Transactional(readOnly = true)
-    public List<ProfessionalDto> nutritionProfessionals() {
-        return users.findByRole(Role.TRAINER).stream().filter(u -> u.isActive() && u.isNutritionEnabled())
-                .sorted(Comparator.comparing(AppUser::getFullName)).map(u -> new ProfessionalDto(u.getId(), u.getFullName())).toList();
+    public List<ProfessionalDto> professionals() {
+        return users.findByRole(Role.TRAINER).stream().filter(AppUser::isActive).sorted(Comparator.comparing(AppUser::getFullName))
+                .map(u -> new ProfessionalDto(u.getId(), u.getFullName(), u.isTrainingEnabled(), u.isNutritionEnabled())).toList();
     }
 
     // ---- Planes ----

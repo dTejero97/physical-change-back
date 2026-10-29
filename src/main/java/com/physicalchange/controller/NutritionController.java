@@ -22,9 +22,9 @@ public class NutritionController {
     /** Clientes de los que soy responsable de nutrición (ADR-013). */
     @GetMapping("/clients") @PreAuthorize("hasRole('TRAINER')")
     public List<UserDto> clients() { return svc.myNutritionClients(); }
-    /** Profesionales asignables como responsables de nutrición. */
+    /** Profesionales y sus servicios, para asignar responsables de nutrición. */
     @GetMapping("/professionals") @PreAuthorize("hasRole('ADMIN')")
-    public List<ProfessionalDto> professionals() { return svc.nutritionProfessionals(); }
+    public List<ProfessionalDto> professionals() { return svc.professionals(); }
 
     @GetMapping("/foods") public Page<FoodDto> foods(@RequestParam(required = false) String q, Pageable p) { return svc.searchFoods(q, p); }
     @PostMapping("/foods") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')") @ResponseStatus(HttpStatus.CREATED)

@@ -26,7 +26,7 @@ public final class Dtos {
     public record ServicesRequest(boolean training, boolean nutrition) {}
     /** null = sin nutricionista propio: lo lleva su entrenador, si ofrece nutrición. */
     public record NutritionistRequest(Long nutritionistId) {}
-    public record ProfessionalDto(Long id, String fullName) {}
+    public record ProfessionalDto(Long id, String fullName, boolean trainingEnabled, boolean nutritionEnabled) {}
     public record UpdateProfileRequest(@NotBlank @Size(max = 120) String fullName) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank @Size(min = 8, max = 72) String newPassword) {}
 

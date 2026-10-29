@@ -130,7 +130,7 @@ ClientAchievementDto { id, name, description, groupLabel, badge, badgeUrl, tier,
 Clientes de los que soy responsable de nutrición: `UserDto[]`.
 
 ### `GET /api/nutrition/professionals` — solo ADMIN
-Profesionales asignables como responsables de nutrición: `[{ "id", "fullName" }]`.
+Profesionales activos y sus servicios: `[{ "id", "fullName", "trainingEnabled", "nutritionEnabled" }]`. Solo los que tienen `nutritionEnabled` se pueden asignar como nutricionistas.
 
 ### Permisos de nutrición
 - Solo el responsable de nutrición vigente del cliente, o un ADMIN, puede:

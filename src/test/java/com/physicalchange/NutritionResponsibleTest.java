@@ -119,8 +119,11 @@ class NutritionResponsibleTest {
         send("PUT", "/api/clients/" + clientId + "/nutritionist", admin, "{\"nutritionistId\":" + clientId + "}", 400);
         assertNull(users.findById(clientId).orElseThrow().getNutritionistId());
         JsonNode pros = send("GET", "/api/nutrition/professionals", admin, null, 200);
+        for (JsonNode p : pros) {
+            if (p.get("id").asLong() == nutritionistId) { assertTrue(p.get("nutritionEnabled").asBoolean()); assertFalse(p.get("trainingEnabled").asBoolean()); }
+            if (p.get("id").asLong() == trainingOnlyId) assertFalse(p.get("nutritionEnabled").asBoolean());
+        }
         assertTrue(contains(pros, nutritionistId));
-        assertFalse(contains(pros, trainingOnlyId));
         send("GET", "/api/nutrition/professionals", trainer, null, 403);
         // Quitarlo devuelve la nutrición a su entrenador.
         assign(nutritionistId);
