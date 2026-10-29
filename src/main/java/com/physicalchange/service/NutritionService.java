@@ -17,9 +17,11 @@ public class NutritionService {
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private final UserRepository users; private final FoodRepository foods;
     private final NutritionPlanRepository plans; private final NutritionMealRepository meals; private final AccessService access;
+    private final NotificationService notifications;
 
-    public NutritionService(UserRepository u, FoodRepository f, NutritionPlanRepository p, NutritionMealRepository m, AccessService a) {
-        users = u; foods = f; plans = p; meals = m; access = a;
+    public NutritionService(UserRepository u, FoodRepository f, NutritionPlanRepository p, NutritionMealRepository m, AccessService a,
+                            NotificationService n) {
+        users = u; foods = f; plans = p; meals = m; access = a; notifications = n;
     }
 
     // ---- Servicio opcional del entrenador ----
@@ -63,13 +65,39 @@ public class NutritionService {
         NutritionPlan p = new NutritionPlan();
         p.setTrainerId(access.current().id()); p.setClientId(r.clientId());
         p.setName(r.name()); p.setDailyKcal(r.dailyKcal()); p.setNotes(r.notes());
-        return build(plans.save(p));
+        p.setTargetProteinG(r.targetProteinG()); p.setTargetCarbsG(r.targetCarbsG()); p.setTargetFatG(r.targetFatG());
+        return build(plans.save(p), true);
     }
 
+    /**
+     * Cambio del plan por su profesional (o ADMIN): sube la versión y avisa al cliente (ADR-012 §2).
+     * El cliente no llega aquí (403 en el controlador y en assertTrainerOffersNutrition/assertOwnerOrAdmin).
+     */
+    @Transactional
+    public PlanDto updatePlan(Long planId, PlanUpdateRequest r) {
+        assertTrainerOffersNutrition();
+        NutritionPlan p = plans.findById(planId).orElseThrow(() -> new NotFoundException("Plan no encontrado"));
+        access.assertOwnerOrAdmin(p.getTrainerId());
+        p.setName(r.name()); p.setDailyKcal(r.dailyKcal()); p.setNotes(r.notes());
+        p.setTargetProteinG(r.targetProteinG()); p.setTargetCarbsG(r.targetCarbsG()); p.setTargetFatG(r.targetFatG());
+        p.touch();
+        notifications.notify(p.getClientId(), NotificationService.PLAN_UPDATED, "Plan nutricional actualizado",
+                "Tu profesional ha actualizado el plan " + p.getName() + ".", "NUTRITION_PLAN", p.getId());
+        return build(p, isCurrent(p));
+    }
+
+    /** El primero es el vigente (el más reciente); el cliente lo ve marcado como tal. */
     @Transactional(readOnly = true)
     public List<PlanDto> plansForClient(Long clientId) {
         access.assertCanAccessClient(clientId);
-        return plans.findByClientIdOrderByIdDesc(clientId).stream().map(this::build).toList();
+        List<NutritionPlan> list = plans.findByClientIdOrderByIdDesc(clientId);
+        List<PlanDto> out = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) out.add(build(list.get(i), i == 0));
+        return out;
+    }
+
+    private boolean isCurrent(NutritionPlan p) {
+        return plans.findByClientIdOrderByIdDesc(p.getClientId()).stream().findFirst().map(x -> x.getId().equals(p.getId())).orElse(false);
     }
 
     @Transactional
@@ -82,7 +110,8 @@ public class NutritionService {
         m.setPlanId(planId); m.setMealName(r.mealName()); m.setFoodId(r.foodId()); m.setGrams(r.grams());
         m.setPosition(meals.findByPlanIdOrderByMealNameAscPositionAsc(planId).size() + 1);
         meals.save(m);
-        return build(p);
+        p.touch();
+        return build(p, isCurrent(p));
     }
 
     @Transactional
@@ -93,7 +122,8 @@ public class NutritionService {
         NutritionMeal m = meals.findById(mealId).orElseThrow(() -> new NotFoundException("Comida no encontrada"));
         if (!m.getPlanId().equals(planId)) throw new NotFoundException("Comida no encontrada");
         meals.delete(m);
-        return build(p);
+        p.touch();
+        return build(p, isCurrent(p));
     }
 
     // ---- Cálculo de macros ----
@@ -101,7 +131,7 @@ public class NutritionService {
         return per100 == null ? BigDecimal.ZERO : per100.multiply(grams).divide(HUNDRED, 1, RoundingMode.HALF_UP);
     }
 
-    private PlanDto build(NutritionPlan p) {
+    private PlanDto build(NutritionPlan p, boolean current) {
         List<MealDto> list = new ArrayList<>();
         BigDecimal k = BigDecimal.ZERO, pr = BigDecimal.ZERO, c = BigDecimal.ZERO, f = BigDecimal.ZERO;
         for (NutritionMeal m : meals.findByPlanIdOrderByMealNameAscPositionAsc(p.getId())) {
@@ -111,6 +141,7 @@ public class NutritionService {
             list.add(new MealDto(m.getId(), m.getMealName(), food.getId(), food.getName(), m.getGrams(), mk, mp, mc, mf));
             k = k.add(mk); pr = pr.add(mp); c = c.add(mc); f = f.add(mf);
         }
-        return new PlanDto(p.getId(), p.getClientId(), p.getName(), p.getDailyKcal(), p.getNotes(), list, new Totals(k, pr, c, f));
+        return new PlanDto(p.getId(), p.getClientId(), p.getName(), p.getDailyKcal(), p.getNotes(), list, new Totals(k, pr, c, f),
+                p.getTargetProteinG(), p.getTargetCarbsG(), p.getTargetFatG(), p.getVersion(), p.getUpdatedAt(), current);
     }
 }

@@ -26,6 +26,9 @@ public class NutritionController {
     @PostMapping("/plans") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')") @ResponseStatus(HttpStatus.CREATED)
     public PlanDto createPlan(@Valid @RequestBody PlanRequest r) { return svc.createPlan(r); }
     @GetMapping("/plans/client/{clientId}") public List<PlanDto> plans(@PathVariable Long clientId) { return svc.plansForClient(clientId); }
+    /** Solo el profesional del plan (o ADMIN) cambia objetivos y datos; el cliente pide cambios con /api/change-requests/nutrition. */
+    @PutMapping("/plans/{planId}") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
+    public PlanDto updatePlan(@PathVariable Long planId, @Valid @RequestBody PlanUpdateRequest r) { return svc.updatePlan(planId, r); }
     @PostMapping("/plans/{planId}/meals") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')") @ResponseStatus(HttpStatus.CREATED)
     public PlanDto addMeal(@PathVariable Long planId, @Valid @RequestBody MealRequest r) { return svc.addMeal(planId, r); }
     @DeleteMapping("/plans/{planId}/meals/{mealId}") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
