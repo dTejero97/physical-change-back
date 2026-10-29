@@ -122,22 +122,25 @@ class ChangeRequestFlowTest {
 
     @Test void unaAceptacionAplicaSoloElCambioAprobado() throws Exception {
         long[] r = routine(clientId);
-        long squatItem = itemId(r[0], 1);
-        long id = send("POST", "/api/change-requests/training", client, modify(r[1], squatItem, 6), 201).get("id").asLong();
+        String before = plan(r[0]);
+        long id = send("POST", "/api/change-requests/training", client, modify(r[1], itemId(r[0], 1), 6), 201).get("id").asLong();
         JsonNode d = send("POST", "/api/change-requests/" + id + "/accept", trainer, "{}", 200);
         assertEquals("ACCEPTED", d.get("status").asText());
-        assertFalse(d.get("copiedWorkout").asBoolean(), "rutina de un solo cliente: se cambia en su sitio");
-        WorkoutItem s = items.findById(squatItem).orElseThrow();
+        long copy = d.get("appliedWorkoutId").asLong();
+        assertEquals(copy, assignments.findById(r[1]).orElseThrow().getWorkoutId(), "la sesión pasa a su copia");
+        WorkoutItem s = items.findByWorkoutIdOrderByPositionAsc(copy).get(0);
         assertEquals(6, s.getReps());
         assertEquals(4, s.getSets(), "las series no se pidieron: no cambian");
         assertEquals(0, new BigDecimal("80").compareTo(s.getWeightKg()));
-        WorkoutItem p = items.findByWorkoutIdOrderByPositionAsc(r[0]).get(1);
+        WorkoutItem p = items.findByWorkoutIdOrderByPositionAsc(copy).get(1);
         assertEquals(8, p.getReps()); assertEquals(3, p.getSets());
+        assertEquals(before, plan(r[0]), "la rutina planificada no cambia");
         assertEquals(1, notifications.countByUserIdAndType(clientId, "CHANGE_REQUEST_ACCEPTED"));
     }
 
-    @Test void aceptarEnUnaRutinaCompartidaNoCambiaElPlanDeOtrosClientes() throws Exception {
-        long[] r = routine(clientId, otherClientId);
+    /** Dudas H-02: el cambio vale solo para esa sesión; las siguientes siguen lo planificado por el profesional. */
+    @Test void elCambioAceptadoValeSoloParaEsaSesion() throws Exception {
+        long[] r = routine(clientId, clientId, otherClientId);
         String before = plan(r[0]);
         long id = send("POST", "/api/change-requests/training", client,
                 "{\"action\":\"REPLACE_EXERCISE\",\"assignmentId\":" + r[1] + ",\"workoutItemId\":" + itemId(r[0], 2) + ",\"exerciseId\":" + row + "}", 201).get("id").asLong();
@@ -145,40 +148,64 @@ class ChangeRequestFlowTest {
         assertTrue(d.get("copiedWorkout").asBoolean());
         long copy = d.get("appliedWorkoutId").asLong();
         assertNotEquals(r[0], copy);
-        assertEquals(before, plan(r[0]), "la rutina original (del otro cliente) no cambia");
-        assertEquals(r[0], assignments.findById(r[2]).orElseThrow().getWorkoutId());
-        assertEquals(copy, assignments.findById(r[1]).orElseThrow().getWorkoutId(), "la sesión del cliente pasa a su copia");
+        assertEquals(before, plan(r[0]));
+        assertEquals(copy, assignments.findById(r[1]).orElseThrow().getWorkoutId(), "la sesión de la solicitud usa la copia");
+        assertEquals(r[0], assignments.findById(r[2]).orElseThrow().getWorkoutId(), "la siguiente sesión del cliente sigue el plan");
+        assertEquals(r[0], assignments.findById(r[3]).orElseThrow().getWorkoutId(), "el otro cliente sigue el plan");
         assertEquals(row, items.findByWorkoutIdOrderByPositionAsc(copy).get(1).getExerciseId());
         assertEquals(squat, items.findByWorkoutIdOrderByPositionAsc(copy).get(0).getExerciseId());
+        // La copia no aparece en la librería del entrenador.
+        JsonNode library = send("GET", "/api/workouts?size=500", trainer, null, 200).get("content");
+        boolean listed = false;
+        for (JsonNode w : library) listed |= w.get("id").asLong() == copy;
+        assertFalse(listed, "la copia de la sesión no está en la librería");
+    }
+
+    @Test void noSeAceptaUnCambioSobreUnaSesionYaCompletada() throws Exception {
+        long[] r = routine(clientId);
+        long id = send("POST", "/api/change-requests/training", client, modify(r[1], itemId(r[0], 1), 6), 201).get("id").asLong();
+        WorkoutAssignment a = assignments.findById(r[1]).orElseThrow();
+        a.setCompletedDate(LocalDate.now());
+        assignments.save(a);
+        send("POST", "/api/change-requests/" + id + "/accept", trainer, null, 409);
+        assertEquals(r[0], assignments.findById(r[1]).orElseThrow().getWorkoutId());
+        send("POST", "/api/change-requests/" + id + "/reject", trainer, null, 200);
     }
 
     @Test void anadirYQuitarEjercicioSoloAlAceptar() throws Exception {
         long[] r = routine(clientId);
+        String before = plan(r[0]);
         long add = send("POST", "/api/change-requests/training", client,
                 "{\"action\":\"ADD_EXERCISE\",\"assignmentId\":" + r[1] + ",\"exerciseId\":" + row + ",\"sets\":3,\"reps\":12,\"weightKg\":40}", 201).get("id").asLong();
         long remove = send("POST", "/api/change-requests/training", client,
                 "{\"action\":\"REMOVE_EXERCISE\",\"assignmentId\":" + r[1] + ",\"workoutItemId\":" + itemId(r[0], 2) + "}", 201).get("id").asLong();
         assertEquals(2, items.countByWorkoutId(r[0]));
-        send("POST", "/api/change-requests/" + add + "/accept", trainer, null, 200);
-        assertEquals(3, items.countByWorkoutId(r[0]));
-        send("POST", "/api/change-requests/" + remove + "/accept", trainer, null, 200);
-        var left = items.findByWorkoutIdOrderByPositionAsc(r[0]);
+        long copy = send("POST", "/api/change-requests/" + add + "/accept", trainer, null, 200).get("appliedWorkoutId").asLong();
+        assertEquals(3, items.countByWorkoutId(copy));
+        // La segunda aceptación sobre la misma sesión cambia la misma copia.
+        JsonNode d = send("POST", "/api/change-requests/" + remove + "/accept", trainer, null, 200);
+        assertEquals(copy, d.get("appliedWorkoutId").asLong());
+        assertFalse(d.get("copiedWorkout").asBoolean());
+        var left = items.findByWorkoutIdOrderByPositionAsc(copy);
         assertEquals(2, left.size());
         assertEquals(squat, left.get(0).getExerciseId());
         assertEquals(row, left.get(1).getExerciseId());
         assertEquals(2, left.get(1).getPosition(), "posiciones sin huecos");
+        assertEquals(before, plan(r[0]), "la rutina planificada no cambia");
     }
 
     @Test void sinDuplicadosYUnaDecisionEsFinal() throws Exception {
-        long[] r = routine(clientId);
+        long[] r = routine(clientId, clientId);
         String body = modify(r[1], itemId(r[0], 1), 6);
         long id = send("POST", "/api/change-requests/training", client, body, 201).get("id").asLong();
         send("POST", "/api/change-requests/training", client, body, 409);
-        send("POST", "/api/change-requests/" + id + "/accept", trainer, null, 200);
+        // El mismo cambio en otra sesión es otra solicitud.
+        send("POST", "/api/change-requests/training", client, modify(r[2], itemId(r[0], 1), 6), 201);
+        long copy = send("POST", "/api/change-requests/" + id + "/accept", trainer, null, 200).get("appliedWorkoutId").asLong();
         send("POST", "/api/change-requests/" + id + "/reject", trainer, null, 409);
         send("POST", "/api/change-requests/" + id + "/accept", trainer, null, 409);
-        // Decidida la anterior, se puede pedir otro cambio sobre el mismo ejercicio.
-        send("POST", "/api/change-requests/training", client, modify(r[1], itemId(r[0], 1), 5), 201);
+        // Decidida la anterior, se puede pedir otro cambio sobre el mismo ejercicio de esa sesión.
+        send("POST", "/api/change-requests/training", client, modify(r[1], itemId(copy, 1), 5), 201);
     }
 
     @Test void soloElProfesionalResponsableDecide() throws Exception {

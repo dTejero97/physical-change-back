@@ -24,7 +24,7 @@ Todas las rutas exigen JWT. Errores con el formato habitual (`ErrorResponse`): 4
   "sets": 4, "reps": 8, "weightKg": 60, "restSeconds": null, "reason": "Me molesta el hombro con 10 reps" }
 ```
 - 201 → `ChangeRequestDto`. **No modifica la rutina.** Notifica al profesional responsable.
-- 403 si la asignación no es del cliente; 400 si el ejercicio no está en la rutina o el ejercicio propuesto no es visible para su entrenador; 409 si ya hay una solicitud igual pendiente o la asignación está completada.
+- 403 si la asignación no es del cliente; 400 si el ejercicio no está en la rutina o el ejercicio propuesto no es visible para su entrenador; 409 si ya hay una solicitud igual pendiente **para esa sesión** o la asignación está completada.
 
 ### `POST /api/change-requests/nutrition` — solo CLIENT
 ```json
@@ -45,7 +45,9 @@ Para la ficha del cliente y la vista de cliente del admin.
 ```json
 { "note": "OK, bajamos a 8 repeticiones" }
 ```
-- `accept`: aplica el cambio en la misma transacción y devuelve el `ChangeRequestDto` con `status: ACCEPTED`, `appliedWorkoutId` y `copiedWorkout` (true si se creó una copia personal de la rutina compartida). Notifica al cliente.
+- `accept`: aplica el cambio en la misma transacción y devuelve el `ChangeRequestDto` con `status: ACCEPTED`, `appliedWorkoutId` y `copiedWorkout`. Notifica al cliente.
+  - En entrenamiento el cambio vale **solo para la sesión de la solicitud** (`assignmentId`). La primera aceptación crea una copia de la rutina exclusiva de esa sesión (`copiedWorkout: true`); las siguientes sobre la misma sesión cambian esa copia (`copiedWorkout: false`). Las demás sesiones siguen la rutina planificada, y la copia no aparece en `GET /api/workouts`.
+  - 409 si la sesión ya está completada o el ejercicio ya no está en ella.
 - `reject`: no toca el plan. Notifica al cliente.
 - 403 si quien decide no es el responsable ni ADMIN, o es el propio cliente; 409 si la solicitud ya no está pendiente, o si el ejercicio afectado ya no está en la rutina vigente (la solicitud sigue `PENDING`).
 

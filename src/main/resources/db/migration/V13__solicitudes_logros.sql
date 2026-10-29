@@ -11,6 +11,7 @@
 --   ALTER TABLE achievement DROP COLUMN metric, DROP COLUMN threshold, DROP COLUMN points;
 --   ALTER TABLE nutrition_plan DROP COLUMN target_protein_g, DROP COLUMN target_carbs_g, DROP COLUMN target_fat_g,
 --                              DROP COLUMN version, DROP COLUMN updated_at;
+--   ALTER TABLE workout DROP COLUMN session_copy_of;
 --   DELETE FROM flyway_schema_history WHERE version = '13';
 -- =====================================================================
 
@@ -21,6 +22,12 @@ ALTER TABLE nutrition_plan ADD COLUMN target_fat_g     NUMERIC(6, 1) CHECK (targ
 -- Sube cada vez que el profesional cambia el plan; las solicitudes guardan la versión sobre la que se hicieron.
 ALTER TABLE nutrition_plan ADD COLUMN version          INTEGER       NOT NULL DEFAULT 1;
 ALTER TABLE nutrition_plan ADD COLUMN updated_at       TIMESTAMP;
+
+-- ---------- Rutina de una sola sesión ----------
+-- Un cambio aceptado vale solo para la sesión de la solicitud (dudas H-02): se aplica a una copia de la rutina
+-- exclusiva de esa sesión. Guarda la rutina original; las copias no aparecen en la librería del profesional.
+-- Sin clave ajena: si se borra la original, la copia sigue oculta.
+ALTER TABLE workout ADD COLUMN session_copy_of BIGINT;
 
 -- ---------- Notificaciones en la app ----------
 CREATE TABLE notification (

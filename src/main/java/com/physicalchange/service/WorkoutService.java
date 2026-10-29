@@ -35,7 +35,7 @@ public class WorkoutService {
 
     @Transactional(readOnly = true)
     public Page<WorkoutDto> list(Pageable p) {
-        return workouts.findByTrainerId(access.workspaceId(), p).map(WorkoutMapper::toDto);
+        return workouts.findByTrainerIdAndSessionCopyOfIsNull(access.workspaceId(), p).map(WorkoutMapper::toDto);
     }
 
     @Transactional(readOnly = true)

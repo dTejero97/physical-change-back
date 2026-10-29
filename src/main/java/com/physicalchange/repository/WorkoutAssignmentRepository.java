@@ -15,8 +15,6 @@ public interface WorkoutAssignmentRepository extends JpaRepository<WorkoutAssign
     long countByClientIdAndCompletedDateIsNotNull(Long clientId);
     long countByClientIdAndCompletedDateIsNull(Long clientId);
     long countByWorkoutId(Long workoutId);
-    /** Sesiones aún no completadas de un cliente con una rutina: a ellas se aplica un cambio aceptado (ADR-012 §2). */
-    List<WorkoutAssignment> findByClientIdAndWorkoutIdAndCompletedDateIsNull(Long clientId, Long workoutId);
     List<WorkoutAssignment> findByClientId(Long clientId);
 
     /** Asignaciones completadas de un workout por ciertos clientes (ranking de comunidad). */

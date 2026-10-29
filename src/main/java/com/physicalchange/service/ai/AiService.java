@@ -230,7 +230,7 @@ public class AiService {
         int cost = COST.get("PROGRAM");
         checkCredits(me.id(), cost);
 
-        List<Workout> own = r.include().workouts() ? workouts.findByTrainerId(me.id(), PageRequest.of(0, 100)).getContent() : List.of();
+        List<Workout> own = r.include().workouts() ? workouts.findByTrainerIdAndSessionCopyOfIsNull(me.id(), PageRequest.of(0, 100)).getContent() : List.of();
         Map<Long, Workout> byId = own.stream().collect(Collectors.toMap(Workout::getId, w -> w));
         Map<Long, Long> itemCount = own.isEmpty() ? Map.of() : own.stream().collect(Collectors.toMap(Workout::getId,
                 w -> (long) workoutItems.findByWorkoutIdOrderByPositionAsc(w.getId()).size()));

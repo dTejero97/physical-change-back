@@ -8,6 +8,7 @@ import com.physicalchange.security.*;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -22,6 +23,7 @@ public class ChangeRequestService {
     static final String TRAINING = "TRAINING", NUTRITION = "NUTRITION";
     static final String PENDING = "PENDING", ACCEPTED = "ACCEPTED", REJECTED = "REJECTED";
     private static final String REF = "CHANGE_REQUEST";
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final ChangeRequestRepository requests;
     private final ChangeRequestEventRepository events;
@@ -65,7 +67,7 @@ public class ChangeRequestService {
                 throw new BadRequestException("Indica el ejercicio, las series, las repeticiones y el peso");
             c.setExerciseId(exerciseFor(w, r.exerciseId()).getId());
             c.setSets(r.sets()); c.setReps(r.reps()); c.setWeightKg(r.weightKg()); c.setRestSeconds(r.restSeconds());
-            c.setPendingKey("T:" + w.getId() + ":ADD:" + c.getExerciseId());
+            c.setPendingKey("T:" + a.getId() + ":ADD:" + c.getExerciseId());
         } else {
             WorkoutItem item = itemOf(w, r.workoutItemId());
             c.setWorkoutItemId(item.getId());
@@ -84,8 +86,8 @@ public class ChangeRequestService {
                 }
                 default -> { /* REMOVE_EXERCISE: basta con el ejercicio afectado */ }
             }
-            // Una sola solicitud pendiente por ejercicio de la rutina.
-            c.setPendingKey("T:" + w.getId() + ":ITEM:" + item.getPosition());
+            // Una sola solicitud pendiente por ejercicio de la sesión (el cambio vale solo para esa sesión).
+            c.setPendingKey("T:" + a.getId() + ":ITEM:" + item.getPosition());
         }
         return create(c, client, professionalOf(client), r.reason(), "en " + w.getName());
     }
@@ -183,8 +185,9 @@ public class ChangeRequestService {
         String note = blankToNull(d == null ? null : d.note());
         c.decide(ACCEPTED, me, note);
         events.save(new ChangeRequestEvent(c.getId(), me, "ACCEPTED", note == null ? detail : detail + " · " + note));
+        String effect = TRAINING.equals(c.getKind()) ? " " + detail + "; las demás sesiones siguen tu plan." : " Tu plan ya está actualizado.";
         notifications.notify(c.getClientId(), NotificationService.CHANGE_REQUEST_ACCEPTED, "Solicitud aceptada",
-                "Tu profesional ha aceptado " + describe(c) + ". Tu plan ya está actualizado." + (note == null ? "" : " Nota: " + note), REF, c.getId());
+                "Tu profesional ha aceptado " + describe(c) + "." + effect + (note == null ? "" : " Nota: " + note), REF, c.getId());
         return dtos(List.of(c)).get(0);
     }
 
@@ -218,15 +221,15 @@ public class ChangeRequestService {
     // ---------- Aplicar un cambio aceptado ----------
 
     /**
-     * Aplica el cambio a la rutina de las sesiones pendientes del cliente. Si la rutina la usan otros clientes
-     * (o sesiones ya completadas), se crea una copia personal para no alterar sus planes ni el historial.
+     * Aplica el cambio solo a la sesión de la solicitud (dudas H-02): las demás sesiones, del cliente o de otros
+     * clientes, siguen con la rutina planificada. La primera aceptación crea una copia de la rutina exclusiva de
+     * esa sesión; las siguientes sobre la misma sesión cambian esa copia.
      */
     private String applyTraining(ChangeRequest c) {
         WorkoutAssignment a = c.getAssignmentId() == null ? null : assignments.findById(c.getAssignmentId()).orElse(null);
         if (a == null) throw new ConflictException("La sesión de la solicitud ya no existe; recházala");
+        if (a.getCompletedDate() != null) throw new ConflictException("La sesión ya está completada; recházala");
         Workout w = workouts.findById(a.getWorkoutId()).orElseThrow(() -> new ConflictException("La rutina ya no existe; recházala"));
-        List<WorkoutAssignment> pending = assignments.findByClientIdAndWorkoutIdAndCompletedDateIsNull(c.getClientId(), w.getId());
-        if (pending.isEmpty()) throw new ConflictException("El cliente ya no tiene sesiones pendientes con esta rutina; recházala");
 
         // El ejercicio afectado se busca en la versión vigente por la posición y el ejercicio que tenía al pedirlo.
         WorkoutItem target = null;
@@ -238,14 +241,13 @@ public class ChangeRequestService {
         if (c.getExerciseId() == null && ("ADD_EXERCISE".equals(c.getAction()) || "REPLACE_EXERCISE".equals(c.getAction())))
             throw new ConflictException("El ejercicio propuesto ya no existe; rechaza la solicitud");
 
-        boolean shared = assignments.countByWorkoutId(w.getId()) > pending.size();
-        if (shared) {
+        boolean ownCopy = w.getSessionCopyOf() != null && assignments.countByWorkoutId(w.getId()) == 1;
+        if (!ownCopy) {
             Map<Long, WorkoutItem> copies = new HashMap<>();
-            w = copyFor(w, c.getClientId(), copies);
-            Set<Long> pendingIds = pending.stream().map(WorkoutAssignment::getId).collect(Collectors.toSet());
-            for (WorkoutAssignment p : pending) p.setWorkoutId(w.getId());
-            // Las series ya anotadas en esas sesiones pasan a apuntar a los ejercicios de la copia.
-            for (Long aid : pendingIds) for (ExerciseLog l : logs.findByAssignmentId(aid)) {
+            w = copyForSession(w, copies);
+            a.setWorkoutId(w.getId());
+            // Las series ya anotadas en la sesión pasan a apuntar a los ejercicios de la copia.
+            for (ExerciseLog l : logs.findByAssignmentId(a.getId())) {
                 WorkoutItem copy = l.getWorkoutItemId() == null ? null : copies.get(l.getWorkoutItemId());
                 if (copy != null) l.setWorkoutItemId(copy.getId());
             }
@@ -277,18 +279,17 @@ public class ChangeRequestService {
             default -> throw new BadRequestException("Tipo de solicitud no válido");
         }
         c.setAppliedWorkoutId(w.getId());
-        c.setCopiedWorkout(shared);
-        return "Aplicado en la rutina \"" + w.getName() + "\"" + (shared ? " (copia personal del cliente)" : "");
+        c.setCopiedWorkout(!ownCopy);
+        return "Aplicado solo en la sesión del " + a.getScheduledDate().format(DAY);
     }
 
-    /** Copia la rutina y sus ejercicios para un cliente; devuelve la copia y el mapa original → copia. */
-    private Workout copyFor(Workout original, Long clientId, Map<Long, WorkoutItem> copies) {
-        String clientName = users.findById(clientId).map(AppUser::getFullName).orElse("cliente");
-        String name = original.getName() + " · " + clientName;
+    /** Copia la rutina y sus ejercicios para una sola sesión; devuelve la copia y el mapa original → copia. */
+    private Workout copyForSession(Workout original, Map<Long, WorkoutItem> copies) {
         Workout w = new Workout();
         w.setTrainerId(original.getTrainerId());
-        w.setName(name.length() > 120 ? name.substring(0, 120) : name);
+        w.setName(original.getName());
         w.setNotes(original.getNotes());
+        w.setSessionCopyOf(original.getSessionCopyOf() != null ? original.getSessionCopyOf() : original.getId());
         w = workouts.save(w);
         for (WorkoutItem i : items.findByWorkoutIdOrderByPositionAsc(original.getId())) {
             WorkoutItem n = new WorkoutItem();
