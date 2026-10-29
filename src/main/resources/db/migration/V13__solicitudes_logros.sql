@@ -43,7 +43,7 @@ CREATE TABLE notification (
     user_id    BIGINT       NOT NULL REFERENCES app_user (id) ON DELETE CASCADE,
     type       VARCHAR(30)  NOT NULL CHECK (type IN ('CHANGE_REQUEST_CREATED', 'CHANGE_REQUEST_ACCEPTED',
                                                      'CHANGE_REQUEST_REJECTED', 'PLAN_UPDATED', 'ACHIEVEMENT_UNLOCKED',
-                                                     'ONBOARDING_COMPLETED')),
+                                                     'ONBOARDING_COMPLETED', 'ONBOARDING_UPDATE_REQUESTED')),
     title      VARCHAR(120) NOT NULL,
     body       VARCHAR(500),
     ref_type   VARCHAR(30),

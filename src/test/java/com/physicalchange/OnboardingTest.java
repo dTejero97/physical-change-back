@@ -56,9 +56,9 @@ class OnboardingTest {
 
     private JsonNode send(String method, String url, String auth, String body, int expected) throws Exception {
         var req = request(org.springframework.http.HttpMethod.valueOf(method), url).header("Authorization", auth);
-        if (body != null) req.contentType("application/json").content(body);
+        if (body != null) req.contentType("application/json").characterEncoding("UTF-8").content(body);
         MvcResult r = mvc.perform(req).andExpect(status().is(expected)).andReturn();
-        String s = r.getResponse().getContentAsString();
+        String s = r.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         return s.isBlank() ? null : json.readTree(s);
     }
     private JsonNode put(String body, int expected) throws Exception { return send("PUT", "/api/me/onboarding", client, body, expected); }
@@ -210,6 +210,35 @@ class OnboardingTest {
         send("GET", url, collaborator, null, 403);
         send("GET", url, client, null, 403);
         send("PUT", url, trainer, "{}", 405);
+    }
+
+    @Test void elResponsablePideRevisarElCuestionario() throws Exception {
+        put("{\"cardio\":\"MINIMAL\"}", 200);
+        String url = "/api/clients/" + clientId + "/onboarding/request-update";
+        send("POST", url, trainer, "{\"note\":\"Cuéntame si sigue la molestia de rodilla\"}", 204);
+        JsonNode mine = send("GET", "/api/notifications", client, null, 200);
+        JsonNode n = null;
+        for (JsonNode x : mine) if ("ONBOARDING_UPDATE_REQUESTED".equals(x.get("type").asText())) n = x;
+        assertNotNull(n);
+        assertEquals("Revisa tu cuestionario", n.get("title").asText());
+        assertTrue(n.get("body").asText().endsWith("te pide que revises tus datos. Cuéntame si sigue la molestia de rodilla"));
+        assertEquals("ONBOARDING", n.get("refType").asText());
+        // No toca el cuestionario.
+        assertEquals("MINIMAL", send("GET", "/api/me/onboarding", client, null, 200).get("cardio").asText());
+        // Sin leer: no se repite. Leída: se puede volver a pedir (sin nota).
+        send("POST", url, trainer, null, 409);
+        send("POST", "/api/notifications/" + n.get("id").asLong() + "/read", client, null, 204);
+        send("POST", url, admin, null, 204);
+        send("POST", url, trainer, "{\"note\":\"" + "x".repeat(301) + "\"}", 400);
+    }
+
+    @Test void soloLosResponsablesPidenRevisarlo() throws Exception {
+        String url = "/api/clients/" + clientId + "/onboarding/request-update";
+        send("POST", url, otherTrainer, null, 403);
+        send("POST", url, collaborator, null, 403);
+        send("POST", url, client, null, 403);
+        send("GET", "/api/notifications", client, null, 200).forEach(x ->
+                assertNotEquals("ONBOARDING_UPDATE_REQUESTED", x.get("type").asText()));
     }
 
     @Test void soloElClienteUsaSuAsistente() throws Exception {

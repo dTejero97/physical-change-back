@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.service.OnboardingService;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,4 +29,9 @@ public class OnboardingController {
     // ---- Profesional / ADMIN (solo lectura) ----
     @GetMapping("/api/clients/{clientId}/onboarding") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
     public OnboardingDto forClient(@PathVariable Long clientId) { return svc.forClient(clientId); }
+    @PostMapping("/api/clients/{clientId}/onboarding/request-update") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void requestUpdate(@PathVariable Long clientId, @Valid @RequestBody(required = false) OnboardingUpdateRequest r) {
+        svc.requestUpdate(clientId, r == null ? null : r.note());
+    }
 }

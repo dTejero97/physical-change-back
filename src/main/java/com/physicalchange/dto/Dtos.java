@@ -529,4 +529,6 @@ public final class Dtos {
                                 List<String> conditions, Boolean foodAllergy, String allergyDetails, String specialDiet,
                                 String mustKeep, String dislikedFoods, String cooks, LocalDateTime completedAt,
                                 LocalDateTime updatedAt) {}
+    /** El profesional pide al cliente que revise su cuestionario; la nota es opcional. */
+    public record OnboardingUpdateRequest(@Size(max = 300) String note) {}
 }

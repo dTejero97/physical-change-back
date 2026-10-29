@@ -20,6 +20,7 @@ public class NotificationService {
     public static final String PLAN_UPDATED = "PLAN_UPDATED";
     public static final String ACHIEVEMENT_UNLOCKED = "ACHIEVEMENT_UNLOCKED";
     public static final String ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED";
+    public static final String ONBOARDING_UPDATE_REQUESTED = "ONBOARDING_UPDATE_REQUESTED";
     private static final int PAGE = 50;
 
     private final NotificationRepository repo;
@@ -32,6 +33,10 @@ public class NotificationService {
     public void notify(Long userId, String type, String title, String body, String refType, Long refId) {
         repo.save(new Notification(userId, type, cut(title, 120), cut(body, 500), refType, refId));
     }
+
+    /** ¿Tiene el usuario algún aviso de este tipo sin leer? (para no repetir avisos). */
+    @Transactional(readOnly = true)
+    public boolean hasUnread(Long userId, String type) { return repo.existsByUserIdAndTypeAndReadAtIsNull(userId, type); }
 
     @Transactional(readOnly = true)
     public List<NotificationDto> mine(boolean unreadOnly) {

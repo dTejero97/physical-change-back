@@ -160,6 +160,22 @@ public class OnboardingService {
         return dto(clientId);
     }
 
+    /**
+     * Pide al cliente que revise su cuestionario (T184): solo un aviso al cliente, no cambia nada.
+     * Si aún tiene sin leer uno igual, 409 para no repetirlo.
+     */
+    @Transactional
+    public void requestUpdate(Long clientId, String note) {
+        access.assertCanReadNutrition(clientId);
+        users.findById(clientId).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+        if (notifications.hasUnread(clientId, NotificationService.ONBOARDING_UPDATE_REQUESTED))
+            throw new ConflictException("Ya se lo has pedido; aún no lo ha visto");
+        AppUser me = users.findById(access.current().id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+        String n = note == null ? "" : note.trim();
+        String body = me.getFullName() + " te pide que revises tus datos." + (n.isEmpty() ? "" : " " + n);
+        notifications.notify(clientId, NotificationService.ONBOARDING_UPDATE_REQUESTED, "Revisa tu cuestionario", body, "ONBOARDING", clientId);
+    }
+
     // ---------- internos ----------
 
     private AppUser currentClient() {

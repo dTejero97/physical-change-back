@@ -12,6 +12,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     List<Notification> findByUserIdAndReadAtIsNullOrderByCreatedAtDescIdDesc(Long userId, Pageable p);
     long countByUserIdAndReadAtIsNull(Long userId);
     long countByUserIdAndType(Long userId, String type);
+    boolean existsByUserIdAndTypeAndReadAtIsNull(Long userId, String type);
 
     @Modifying
     @Query("update Notification n set n.readAt = :now where n.userId = :user and n.readAt is null")
