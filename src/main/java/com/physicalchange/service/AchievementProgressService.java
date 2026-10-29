@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -69,13 +70,17 @@ public class AchievementProgressService {
 
     // ---------- Entradas ----------
 
-    /** Tras confirmar la actividad. Si falla, la actividad ya está guardada y la siguiente consulta lo recupera. */
+    /**
+     * Tras confirmar la actividad. Si falla, se deshace todo lo de esta evaluación (ni desbloqueo sin aviso ni al revés);
+     * la actividad ya está guardada y la siguiente consulta lo recupera.
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onActivity(ClientActivityEvent e) {
         try {
             evaluate(e.clientId());
         } catch (RuntimeException ex) {
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             log.warn("No se pudieron evaluar los logros del cliente {}: {}", e.clientId(), ex.getMessage());
         }
     }
