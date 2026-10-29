@@ -20,6 +20,9 @@ public class ClientController {
     @GetMapping("/{id}") public UserDto get(@PathVariable Long id) { return svc.get(id); }
     @PostMapping @ResponseStatus(HttpStatus.CREATED) public UserDto create(@Valid @RequestBody CreateClientRequest r) { return svc.create(r); }
     @PutMapping("/{id}") public UserDto update(@PathVariable Long id, @Valid @RequestBody UpdateClientRequest r) { return svc.update(id, r); }
+    /** Responsable de nutrición del cliente (ADR-013). Solo ADMIN. */
+    @PutMapping("/{id}/nutritionist") @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public UserDto setNutritionist(@PathVariable Long id, @RequestBody NutritionistRequest r) { return svc.setNutritionist(id, r); }
     @PutMapping("/{id}/profile") public ClientProfileDto updateProfile(@PathVariable Long id, @Valid @RequestBody ClientProfileRequest r) { return profiles.update(id, r); }
     /** Borrado lógico: solo clientes archivados. */
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void remove(@PathVariable Long id) { profiles.remove(id); }

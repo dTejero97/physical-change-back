@@ -16,6 +16,10 @@ public class AppUser {
     @Column(nullable = false) private Integer active = 1;
     /** El entrenador ofrece nutrición como servicio (solo TRAINER). */
     @Column(name = "NUTRITION_ENABLED", nullable = false) private Integer nutritionEnabled = 0;
+    /** El profesional ofrece entrenamiento (solo TRAINER, ADR-013). */
+    @Column(name = "TRAINING_ENABLED", nullable = false) private Integer trainingEnabled = 1;
+    /** Responsable de nutrición si no es su entrenador (solo CLIENT, ADR-013). */
+    @Column(name = "NUTRITIONIST_ID") private Long nutritionistId;
     /** Sube al desactivar, cambiar la contraseña o cerrar sesión: invalida los JWT emitidos antes (T141). */
     @Column(name = "TOKEN_VERSION", nullable = false) private Integer tokenVersion = 0;
 
@@ -44,4 +48,8 @@ public class AppUser {
     public void revokeSessions() { this.tokenVersion = getTokenVersion() + 1; }
     public boolean isNutritionEnabled() { return nutritionEnabled != null && nutritionEnabled == 1; }
     public void setNutritionEnabled(boolean n) { this.nutritionEnabled = n ? 1 : 0; }
+    public boolean isTrainingEnabled() { return trainingEnabled == null || trainingEnabled == 1; }
+    public void setTrainingEnabled(boolean t) { this.trainingEnabled = t ? 1 : 0; }
+    public Long getNutritionistId() { return nutritionistId; }
+    public void setNutritionistId(Long id) { this.nutritionistId = id; }
 }

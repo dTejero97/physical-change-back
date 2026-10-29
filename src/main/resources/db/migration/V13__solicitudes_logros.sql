@@ -12,6 +12,7 @@
 --   ALTER TABLE nutrition_plan DROP COLUMN target_protein_g, DROP COLUMN target_carbs_g, DROP COLUMN target_fat_g,
 --                              DROP COLUMN version, DROP COLUMN updated_at;
 --   ALTER TABLE workout DROP COLUMN session_copy_of;
+--   ALTER TABLE app_user DROP COLUMN nutritionist_id, DROP COLUMN training_enabled;
 --   DELETE FROM flyway_schema_history WHERE version = '13';
 -- =====================================================================
 
@@ -28,6 +29,13 @@ ALTER TABLE nutrition_plan ADD COLUMN updated_at       TIMESTAMP;
 -- exclusiva de esa sesión. Guarda la rutina original; las copias no aparecen en la librería del profesional.
 -- Sin clave ajena: si se borra la original, la copia sigue oculta.
 ALTER TABLE workout ADD COLUMN session_copy_of BIGINT;
+
+-- ---------- Responsables de entrenamiento y de nutrición (ADR-013) ----------
+-- Profesional: ofrece entrenamiento (nuevo) y/o nutrición (nutrition_enabled, ya existía).
+ALTER TABLE app_user ADD COLUMN training_enabled INTEGER NOT NULL DEFAULT 1;
+-- Cliente: responsable de nutrición si no es su entrenador. NULL = el entrenador, si ofrece nutrición.
+ALTER TABLE app_user ADD COLUMN nutritionist_id  BIGINT REFERENCES app_user (id) ON DELETE SET NULL;
+CREATE INDEX ix_app_user_nutritionist ON app_user (nutritionist_id);
 
 -- ---------- Notificaciones en la app ----------
 CREATE TABLE notification (
@@ -88,13 +96,13 @@ CREATE TABLE change_request (
 CREATE INDEX ix_change_request_professional ON change_request (professional_id, status);
 CREATE INDEX ix_change_request_client ON change_request (client_id, created_at DESC);
 
--- Historial de cada solicitud: CREATED, ACCEPTED, REJECTED.
+-- Historial de cada solicitud: CREATED, ACCEPTED, REJECTED y REASSIGNED (cambio de nutricionista, ADR-013).
 CREATE TABLE change_request_event (
     id         BIGSERIAL   PRIMARY KEY,
     request_id  BIGINT      NOT NULL REFERENCES change_request (id) ON DELETE CASCADE,
     occurred_at TIMESTAMP   NOT NULL,
     actor_id   BIGINT      NOT NULL REFERENCES app_user (id),
-    action     VARCHAR(10) NOT NULL CHECK (action IN ('CREATED', 'ACCEPTED', 'REJECTED')),
+    action     VARCHAR(10) NOT NULL CHECK (action IN ('CREATED', 'ACCEPTED', 'REJECTED', 'REASSIGNED')),
     note       VARCHAR(500)
 );
 CREATE INDEX ix_change_request_event_request ON change_request_event (request_id, occurred_at);

@@ -117,7 +117,10 @@ public class ChangeRequestService {
             c.setMealId(m.getId()); c.setFoodId(r.foodId()); c.setGrams(r.grams());
             c.setPendingKey("N:" + p.getId() + ":MEAL:" + m.getId());
         }
-        AppUser pro = users.findById(p.getTrainerId()).orElseThrow(() -> new NotFoundException("Profesional no encontrado"));
+        // La revisa el responsable de nutrición vigente, no necesariamente quien escribió el plan (ADR-013).
+        Long proId = access.nutritionResponsibleOf(client);
+        if (proId == null) throw new ConflictException("Ahora mismo no tienes responsable de nutrición");
+        AppUser pro = users.findById(proId).orElseThrow(() -> new NotFoundException("Profesional no encontrado"));
         return create(c, client, pro, r.reason(), "en el plan " + p.getName());
     }
 
@@ -204,6 +207,22 @@ public class ChangeRequestService {
         return dtos(List.of(c)).get(0);
     }
 
+    /**
+     * Cambio de responsable de nutrición (ADR-013 §2): sus solicitudes de nutrición pendientes pasan al nuevo,
+     * con constancia en el historial. Se llama dentro de la transacción que cambia al responsable.
+     */
+    void reassignNutrition(Long clientId, Long newProfessionalId, Long actorId) {
+        if (newProfessionalId == null) return;  // sin responsable: las decide el ADMIN
+        AppUser pro = users.findById(newProfessionalId).orElseThrow(() -> new NotFoundException("Profesional no encontrado"));
+        for (ChangeRequest c : requests.findByClient(clientId, PENDING)) {
+            if (!NUTRITION.equals(c.getKind()) || newProfessionalId.equals(c.getProfessionalId())) continue;
+            c.setProfessionalId(newProfessionalId);
+            events.save(new ChangeRequestEvent(c.getId(), actorId, "REASSIGNED", "Nuevo responsable de nutrición: " + pro.getFullName()));
+            notifications.notify(newProfessionalId, NotificationService.CHANGE_REQUEST_CREATED, "Solicitud de cambio reasignada",
+                    "Ahora eres responsable de nutrición de este cliente y tienes una solicitud suya pendiente.", REF, c.getId());
+        }
+    }
+
     /** Bloquea la solicitud y comprueba quién decide y que siga pendiente. */
     private ChangeRequest decidable(Long id) {
         ChangeRequest c = requests.lockById(id).orElseThrow(() -> new NotFoundException("Solicitud no encontrada"));
@@ -212,7 +231,9 @@ public class ChangeRequestService {
         if (me.role() != Role.ADMIN) {
             if (me.role() != Role.TRAINER || !me.id().equals(c.getProfessionalId()))
                 throw new ForbiddenException("Solo el profesional responsable puede decidir esta solicitud");
-            access.assertCanAccessClient(c.getClientId());
+            // Y tiene que seguir siéndolo: de entrenamiento (su entrenador) o de nutrición (ADR-013).
+            if (NUTRITION.equals(c.getKind())) access.assertNutritionResponsible(c.getClientId());
+            else access.assertCanAccessClient(c.getClientId());
         }
         if (!c.isPending()) throw new ConflictException("La solicitud ya está " + (ACCEPTED.equals(c.getStatus()) ? "aceptada" : "rechazada"));
         return c;

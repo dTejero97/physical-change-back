@@ -15,8 +15,10 @@ import java.util.List;
 @Service
 public class ClientService {
     private final UserRepository users; private final PasswordEncoder enc; private final AccessService access;
-    private final ClientProfileService profiles;
-    public ClientService(UserRepository u, PasswordEncoder e, AccessService a, ClientProfileService p) { users = u; enc = e; access = a; profiles = p; }
+    private final ClientProfileService profiles; private final ChangeRequestService changeRequests;
+    public ClientService(UserRepository u, PasswordEncoder e, AccessService a, ClientProfileService p, ChangeRequestService cr) {
+        users = u; enc = e; access = a; profiles = p; changeRequests = cr;
+    }
 
     /** Clientes del entrenador (todos si es ADMIN), sin los eliminados desde "Archivados". */
     @Transactional(readOnly = true)
@@ -47,6 +49,24 @@ public class ClientService {
         if (c.getRole() != Role.CLIENT) throw new NotFoundException("Cliente no encontrado");
         c.setFullName(r.fullName());
         c.setActive(r.active());
+        return AuthService.toDto(c);
+    }
+
+    /**
+     * Responsable de nutrición del cliente (ADR-013 §2). Solo ADMIN: da acceso a la nutrición del cliente a otro
+     * profesional. null = lo lleva su entrenador, si ofrece nutrición. Las solicitudes pendientes pasan al nuevo.
+     */
+    @Transactional
+    public UserDto setNutritionist(Long id, NutritionistRequest r) {
+        AuthUser me = access.current();
+        if (me.role() != Role.ADMIN) throw new ForbiddenException("Solo el administrador asigna el responsable de nutrición");
+        AppUser c = users.findById(id).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+        if (r.nutritionistId() != null) {
+            users.findById(r.nutritionistId()).filter(p -> p.getRole() == Role.TRAINER && p.isActive() && p.isNutritionEnabled())
+                    .orElseThrow(() -> new BadRequestException("El profesional elegido no ofrece nutrición"));
+        }
+        c.setNutritionistId(r.nutritionistId());
+        changeRequests.reassignNutrition(c.getId(), access.nutritionResponsibleOf(c), me.id());
         return AuthService.toDto(c);
     }
 

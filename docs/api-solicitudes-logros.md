@@ -108,3 +108,39 @@ ClientAchievementDto { id, name, description, groupLabel, badge, badgeUrl, tier,
                        status: UNLOCKED | LOCKED | NO_DATA, unlockedOn, progress, target, percent }
 ```
 `progress` y `target` son nulos cuando no se pueden medir. `NO_DATA`: no hay datos para comprobar la condición (cardio, nutrición, vídeos).
+
+## Responsables de entrenamiento y de nutrición (ADR-013)
+
+### `PUT /api/auth/me/services` — TRAINER
+```json
+{ "training": true, "nutrition": false }
+```
+- 200 → `UserDto`. 400 si los dos están en `false`.
+- Sin entrenamiento, crear, editar o asignar rutinas responde 403.
+
+### `PUT /api/clients/{id}/nutritionist` — solo ADMIN
+```json
+{ "nutritionistId": 7 }
+```
+- `null` = sin nutricionista propio: lleva la nutrición su entrenador, si la ofrece.
+- 400 si el profesional no es un TRAINER activo con nutrición.
+- Las solicitudes de nutrición pendientes pasan al nuevo responsable: evento `REASSIGNED` en su historial y aviso al nuevo responsable.
+
+### `GET /api/nutrition/clients` — TRAINER
+Clientes de los que soy responsable de nutrición: `UserDto[]`.
+
+### `GET /api/nutrition/professionals` — solo ADMIN
+Profesionales asignables como responsables de nutrición: `[{ "id", "fullName" }]`.
+
+### Permisos de nutrición
+- Solo el responsable de nutrición vigente del cliente, o un ADMIN, puede:
+  - crear y editar planes (`POST /api/nutrition/plans`, `PUT /api/nutrition/plans/{id}`, comidas);
+  - decidir solicitudes de nutrición.
+- Escribir el plan no da permiso por sí solo: si el responsable cambia, el autor anterior pierde la edición.
+- `GET /api/nutrition/plans/client/{id}` lo pueden usar:
+  - el responsable de nutrición;
+  - quien ya tiene acceso al cliente: su entrenador, el ADMIN o el propio cliente.
+
+### Cambios en `UserDto`
+- Campos nuevos: `trainingEnabled` y `nutritionistId`.
+- En `GET /api/auth/me` de un CLIENT, `nutritionEnabled` y `trainingEnabled` indican si tiene responsable de cada tipo.

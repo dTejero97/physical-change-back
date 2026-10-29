@@ -46,6 +46,7 @@ public class WorkoutService {
 
     @Transactional
     public WorkoutDto create(WorkoutRequest r) {
+        access.assertOffersTraining();
         Workout w = new Workout();
         w.setTrainerId(access.workspaceId());
         w.setName(r.name());
@@ -55,6 +56,7 @@ public class WorkoutService {
 
     @Transactional
     public WorkoutDto update(Long id, WorkoutRequest r) {
+        access.assertOffersTraining();
         Workout w = ownedWorkout(id);
         w.setName(r.name());
         w.setNotes(r.notes());
@@ -76,6 +78,7 @@ public class WorkoutService {
 
     @Transactional
     public WorkoutDetailDto addItem(Long workoutId, WorkoutItemRequest r) {
+        access.assertOffersTraining();
         Workout w = ownedWorkout(workoutId);
         Exercise e = visibleExercise(r.exerciseId());
         WorkoutItem i = new WorkoutItem();
@@ -88,6 +91,7 @@ public class WorkoutService {
 
     @Transactional
     public WorkoutDetailDto updateItem(Long workoutId, Long itemId, WorkoutItemRequest r) {
+        access.assertOffersTraining();
         Workout w = ownedWorkout(workoutId);
         WorkoutItem i = ownedItem(w, itemId);
         apply(i, visibleExercise(r.exerciseId()), r);
@@ -106,7 +110,8 @@ public class WorkoutService {
 
     @Transactional
     public AssignmentDto assign(AssignRequest r) {
-        Workout w = workouts.findById(r.workoutId()).orElseThrow(() -> new NotFoundException("Entrenamiento no encontrado"));
+        access.assertOffersTraining();
+        Workout w =workouts.findById(r.workoutId()).orElseThrow(() -> new NotFoundException("Entrenamiento no encontrado"));
         access.assertOwnerOrAdmin(w.getTrainerId());
         access.assertCanAccessClient(r.clientId());
         if (access.current().role() == Role.COLLABORATOR)

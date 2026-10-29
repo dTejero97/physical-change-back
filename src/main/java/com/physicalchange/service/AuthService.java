@@ -22,17 +22,30 @@ public class AuthService {
 
     /** DTO simple (flag propio del usuario). */
     public static UserDto toDto(AppUser u) {
-        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), u.isNutritionEnabled());
+        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), u.isNutritionEnabled(),
+                u.isTrainingEnabled(), u.getNutritionistId());
     }
 
-    /** DTO de perfil: para un CLIENT, nutritionEnabled refleja si su entrenador ofrece el servicio. */
+    /** DTO de perfil: para un CLIENT, los servicios indican si tiene responsable de nutrición y de entrenamiento (ADR-013). */
     @Transactional(readOnly = true)
     public UserDto profile(AppUser u) {
-        boolean n = u.isNutritionEnabled();
+        boolean n = u.isNutritionEnabled(), t = u.isTrainingEnabled();
         if (u.getRole() == Role.CLIENT) {
-            n = u.getTrainerId() != null && users.findById(u.getTrainerId()).map(AppUser::isNutritionEnabled).orElse(false);
+            n = access.nutritionResponsibleOf(u) != null;
+            t = access.trainingResponsibleOf(u) != null;
         }
-        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), n);
+        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), n, t, u.getNutritionistId());
+    }
+
+    /** Servicios del profesional (ADR-013 §1): entrenamiento, nutrición o ambos. */
+    @Transactional
+    public UserDto updateServices(ServicesRequest r) {
+        AppUser u = currentUser();
+        if (u.getRole() != Role.TRAINER) throw new ForbiddenException("Solo un profesional ofrece servicios");
+        if (!r.training() && !r.nutrition()) throw new BadRequestException("Ofrece al menos entrenamiento o nutrición");
+        u.setTrainingEnabled(r.training());
+        u.setNutritionEnabled(r.nutrition());
+        return profile(u);
     }
 
     /** Acepta email o el usuario "admin". */

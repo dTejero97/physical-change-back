@@ -29,6 +29,7 @@ public class NutritionService {
     public NutritionServiceRequest setService(boolean enabled) {
         AppUser me = users.findById(access.current().id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
         if (me.getRole() != Role.TRAINER) throw new ForbiddenException("Solo un entrenador puede activar el servicio");
+        if (!enabled && !me.isTrainingEnabled()) throw new BadRequestException("Ofrece al menos entrenamiento o nutrición");
         me.setNutritionEnabled(enabled);
         return new NutritionServiceRequest(enabled);
     }
@@ -57,11 +58,28 @@ public class NutritionService {
         return dto(foods.save(f));
     }
 
+    // ---- Clientes y profesionales de nutrición (ADR-013) ----
+
+    /** Clientes de los que soy el responsable de nutrición: los asignados y los míos sin nutricionista propio. */
+    @Transactional(readOnly = true)
+    public List<UserDto> myNutritionClients() {
+        Long me = access.current().id();
+        return users.findNutritionCandidates(me).stream()
+                .filter(c -> me.equals(access.nutritionResponsibleOf(c))).map(AuthService::toDto).toList();
+    }
+
+    /** Profesionales que se pueden asignar como responsables de nutrición (para el ADMIN). */
+    @Transactional(readOnly = true)
+    public List<ProfessionalDto> nutritionProfessionals() {
+        return users.findByRole(Role.TRAINER).stream().filter(u -> u.isActive() && u.isNutritionEnabled())
+                .sorted(Comparator.comparing(AppUser::getFullName)).map(u -> new ProfessionalDto(u.getId(), u.getFullName())).toList();
+    }
+
     // ---- Planes ----
+    /** Solo el responsable de nutrición vigente del cliente (o ADMIN) crea y cambia sus planes (ADR-013 §4). */
     @Transactional
     public PlanDto createPlan(PlanRequest r) {
-        assertTrainerOffersNutrition();
-        access.assertCanAccessClient(r.clientId());
+        access.assertNutritionResponsible(r.clientId());
         NutritionPlan p = new NutritionPlan();
         p.setTrainerId(access.current().id()); p.setClientId(r.clientId());
         p.setName(r.name()); p.setDailyKcal(r.dailyKcal()); p.setNotes(r.notes());
@@ -71,13 +89,12 @@ public class NutritionService {
 
     /**
      * Cambio del plan por su profesional (o ADMIN): sube la versión y avisa al cliente (ADR-012 §2).
-     * El cliente no llega aquí (403 en el controlador y en assertTrainerOffersNutrition/assertOwnerOrAdmin).
+     * El cliente no llega aquí (403 en el controlador y en assertNutritionResponsible).
      */
     @Transactional
     public PlanDto updatePlan(Long planId, PlanUpdateRequest r) {
-        assertTrainerOffersNutrition();
         NutritionPlan p = plans.findById(planId).orElseThrow(() -> new NotFoundException("Plan no encontrado"));
-        access.assertOwnerOrAdmin(p.getTrainerId());
+        access.assertNutritionResponsible(p.getClientId());
         p.setName(r.name()); p.setDailyKcal(r.dailyKcal()); p.setNotes(r.notes());
         p.setTargetProteinG(r.targetProteinG()); p.setTargetCarbsG(r.targetCarbsG()); p.setTargetFatG(r.targetFatG());
         p.touch();
@@ -89,7 +106,7 @@ public class NutritionService {
     /** El primero es el vigente (el más reciente); el cliente lo ve marcado como tal. */
     @Transactional(readOnly = true)
     public List<PlanDto> plansForClient(Long clientId) {
-        access.assertCanAccessClient(clientId);
+        access.assertCanReadNutrition(clientId);
         List<NutritionPlan> list = plans.findByClientIdOrderByIdDesc(clientId);
         List<PlanDto> out = new ArrayList<>();
         for (int i = 0; i < list.size(); i++) out.add(build(list.get(i), i == 0));
@@ -102,9 +119,8 @@ public class NutritionService {
 
     @Transactional
     public PlanDto addMeal(Long planId, MealRequest r) {
-        assertTrainerOffersNutrition();
         NutritionPlan p = plans.findById(planId).orElseThrow(() -> new NotFoundException("Plan no encontrado"));
-        access.assertOwnerOrAdmin(p.getTrainerId());
+        access.assertNutritionResponsible(p.getClientId());
         foods.findById(r.foodId()).orElseThrow(() -> new NotFoundException("Alimento no encontrado"));
         NutritionMeal m = new NutritionMeal();
         m.setPlanId(planId); m.setMealName(r.mealName()); m.setFoodId(r.foodId()); m.setGrams(r.grams());
@@ -116,9 +132,8 @@ public class NutritionService {
 
     @Transactional
     public PlanDto removeMeal(Long planId, Long mealId) {
-        assertTrainerOffersNutrition();
         NutritionPlan p = plans.findById(planId).orElseThrow(() -> new NotFoundException("Plan no encontrado"));
-        access.assertOwnerOrAdmin(p.getTrainerId());
+        access.assertNutritionResponsible(p.getClientId());
         NutritionMeal m = meals.findById(mealId).orElseThrow(() -> new NotFoundException("Comida no encontrada"));
         if (!m.getPlanId().equals(planId)) throw new NotFoundException("Comida no encontrada");
         meals.delete(m);

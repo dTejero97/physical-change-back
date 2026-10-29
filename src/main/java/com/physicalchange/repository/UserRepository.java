@@ -25,6 +25,11 @@ public interface UserRepository extends JpaRepository<AppUser, Long> {
            "(select p.clientId from ClientProfile p where p.clientId = u.id and p.removedAt is not null)")
     Page<AppUser> findVisibleClients(@Param("t") Long trainerId, Pageable p);
 
+    /** Clientes activos que podría llevar en nutrición (ADR-013): asignados a mí o míos sin nutricionista propio. */
+    @Query("select u from AppUser u where u.role = com.physicalchange.domain.Role.CLIENT and u.active = 1 and " +
+           "(u.nutritionistId = :me or (u.nutritionistId is null and u.trainerId = :me)) order by u.fullName")
+    List<AppUser> findNutritionCandidates(@Param("me") Long me);
+
     @Query("select u from AppUser u where u.role = com.physicalchange.domain.Role.CLIENT and not exists " +
            "(select p.clientId from ClientProfile p where p.clientId = u.id and p.removedAt is not null)")
     Page<AppUser> findAllVisibleClients(Pageable p);

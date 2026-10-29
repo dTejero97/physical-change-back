@@ -59,6 +59,47 @@ public class AccessService {
         if (c.getRole() != Role.CLIENT || !me.id().equals(c.getTrainerId())) throw new ForbiddenException("No es tu cliente");
     }
 
+    // ---------- Responsables de entrenamiento y de nutrición (ADR-013) ----------
+
+    /** Responsable de nutrición vigente: su nutricionista (si sigue ofreciendo nutrición) o, si no tiene, su entrenador si la ofrece. */
+    public Long nutritionResponsibleOf(AppUser client) {
+        Long id = client.getNutritionistId() != null ? client.getNutritionistId() : client.getTrainerId();
+        if (id == null) return null;
+        return users.findById(id).filter(p -> p.getRole() == Role.TRAINER && p.isActive() && p.isNutritionEnabled()).map(AppUser::getId).orElse(null);
+    }
+
+    /** Responsable de entrenamiento: su entrenador, si ofrece entrenamiento. */
+    public Long trainingResponsibleOf(AppUser client) {
+        if (client.getTrainerId() == null) return null;
+        return users.findById(client.getTrainerId()).filter(AppUser::isTrainingEnabled).map(AppUser::getId).orElse(null);
+    }
+
+    /** Cambiar la nutrición de un cliente: ADMIN o su responsable de nutrición vigente. Nadie más, tampoco su entrenador si no lo es. */
+    public void assertNutritionResponsible(Long clientId) {
+        AuthUser me = current();
+        if (me.role() == Role.ADMIN) return;
+        if (me.role() != Role.TRAINER || !me.id().equals(nutritionResponsibleOf(client(clientId))))
+            throw new ForbiddenException("Solo el responsable de nutrición del cliente puede hacerlo");
+    }
+
+    /** Ver la nutrición de un cliente: su responsable de nutrición o quien ya tiene acceso al cliente. */
+    public void assertCanReadNutrition(Long clientId) {
+        AuthUser me = current();
+        if (me.role() == Role.TRAINER && me.id().equals(nutritionResponsibleOf(client(clientId)))) return;
+        assertCanAccessClient(clientId);
+    }
+
+    /** Crear o cambiar rutinas: el espacio de trabajo tiene que ofrecer entrenamiento. ADMIN siempre. */
+    public void assertOffersTraining() {
+        if (current().role() == Role.ADMIN) return;
+        AppUser pro = users.findById(workspaceId()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+        if (!pro.isTrainingEnabled()) throw new ForbiddenException("Tu cuenta no ofrece entrenamiento");
+    }
+
+    private AppUser client(Long clientId) {
+        return users.findById(clientId).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+    }
+
     /** Propietario, ADMIN, o colaborador del espacio dueño del recurso. */
     public void assertOwnerOrAdmin(Long ownerId) {
         AuthUser me = current();

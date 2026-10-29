@@ -16,8 +16,17 @@ public final class Dtos {
     /** username: email o el usuario "admin". */
     public record LoginRequest(@NotBlank @Size(max = 160) String username, @NotBlank @Size(max = 72) String password) {}
     public record LoginResponse(String token, UserDto user) {}
-    /** nutritionEnabled: en TRAINER es su propio servicio; en CLIENT indica si su entrenador ofrece nutrición. */
-    public record UserDto(Long id, String email, String fullName, Role role, Long trainerId, boolean nutritionEnabled) {}
+    /**
+     * nutritionEnabled / trainingEnabled: en TRAINER son sus servicios; en CLIENT (perfil) indican si tiene responsable
+     * de nutrición / de entrenamiento. nutritionistId: responsable de nutrición asignado por el ADMIN (ADR-013).
+     */
+    public record UserDto(Long id, String email, String fullName, Role role, Long trainerId, boolean nutritionEnabled,
+                          boolean trainingEnabled, Long nutritionistId) {}
+    /** Servicios que ofrece el profesional: al menos uno. */
+    public record ServicesRequest(boolean training, boolean nutrition) {}
+    /** null = sin nutricionista propio: lo lleva su entrenador, si ofrece nutrición. */
+    public record NutritionistRequest(Long nutritionistId) {}
+    public record ProfessionalDto(Long id, String fullName) {}
     public record UpdateProfileRequest(@NotBlank @Size(max = 120) String fullName) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank @Size(min = 8, max = 72) String newPassword) {}
 
