@@ -35,6 +35,10 @@ public class Achievement {
     @Column(name = "DAYS_AFTER") private Integer daysAfter;
     @Column(nullable = false) private Integer position = 0;
     @Column(name = "CREATED_AT", nullable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    /** Solo en los del sistema: qué se mide y cuánto hace falta (ADR-007 §6, ADR-012 §5). */
+    @Column(length = 20) private String metric;
+    @Column(precision = 12, scale = 2) private BigDecimal threshold;
+    @Column(nullable = false) private Integer points = 10;
 
     public Long getId() { return id; }
     public Long getCategoryId() { return categoryId; }
@@ -79,4 +83,10 @@ public class Achievement {
     public Integer getPosition() { return position; }
     public void setPosition(Integer p) { this.position = p; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public String getMetric() { return metric; }
+    public void setMetric(String m) { this.metric = m; }
+    public BigDecimal getThreshold() { return threshold; }
+    public void setThreshold(BigDecimal t) { this.threshold = t; }
+    public int getPoints() { return points == null ? 0 : points; }
+    public void setPoints(Integer p) { this.points = p; }
 }

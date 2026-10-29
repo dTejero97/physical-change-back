@@ -306,15 +306,27 @@ public final class Dtos {
                               @DecimalMin("0") @DecimalMax("100") BigDecimal proteinG, @DecimalMin("0") @DecimalMax("100") BigDecimal carbsG,
                               @DecimalMin("0") @DecimalMax("100") BigDecimal fatG) {}
     public record FoodDto(Long id, String name, BigDecimal kcal100g, BigDecimal proteinG, BigDecimal carbsG, BigDecimal fatG) {}
+    /** Objetivos de macros opcionales (V13): solo los fija el profesional. */
     public record PlanRequest(@NotNull Long clientId, @NotBlank @Size(max = 120) String name,
-                              @Min(800) @Max(6000) Integer dailyKcal, @Size(max = 2000) String notes) {}
+                              @Min(800) @Max(6000) Integer dailyKcal, @Size(max = 2000) String notes,
+                              @DecimalMin("0") @DecimalMax("1000") BigDecimal targetProteinG,
+                              @DecimalMin("0") @DecimalMax("1500") BigDecimal targetCarbsG,
+                              @DecimalMin("0") @DecimalMax("500") BigDecimal targetFatG) {}
+    /** Cambio del plan por el profesional responsable: sube la versión y avisa al cliente. */
+    public record PlanUpdateRequest(@NotBlank @Size(max = 120) String name, @Min(800) @Max(6000) Integer dailyKcal,
+                                    @DecimalMin("0") @DecimalMax("1000") BigDecimal targetProteinG,
+                                    @DecimalMin("0") @DecimalMax("1500") BigDecimal targetCarbsG,
+                                    @DecimalMin("0") @DecimalMax("500") BigDecimal targetFatG,
+                                    @Size(max = 2000) String notes) {}
     public record MealRequest(@NotBlank @Size(max = 60) String mealName, @NotNull Long foodId,
                               @NotNull @DecimalMin("1") @DecimalMax("5000") BigDecimal grams) {}
     public record MealDto(Long id, String mealName, Long foodId, String foodName, BigDecimal grams,
                           BigDecimal kcal, BigDecimal proteinG, BigDecimal carbsG, BigDecimal fatG) {}
     public record Totals(BigDecimal kcal, BigDecimal proteinG, BigDecimal carbsG, BigDecimal fatG) {}
+    /** current: es el plan vigente del cliente (el más reciente). */
     public record PlanDto(Long id, Long clientId, String name, Integer dailyKcal, String notes,
-                          List<MealDto> meals, Totals totals) {}
+                          List<MealDto> meals, Totals totals, BigDecimal targetProteinG, BigDecimal targetCarbsG,
+                          BigDecimal targetFatG, int version, LocalDateTime updatedAt, boolean current) {}
 
     // ---- Agenda (contrato en docs/api-agenda.md) ----
     public static final String SESSION_COLORS = "#5B6CF0|#8B3FD1|#C2187A|#F49AC8|#F07A12|#E9D85A|#3FAE6A|#1F6B4F|#93ACD6";
@@ -452,4 +464,44 @@ public final class Dtos {
     public record TeamMeDto(String ownerName, TeamPermissionsDto permissions, List<Long> clientIds) {}
     public record PublicTeamInvitationDto(String ownerName, String email, String fullName) {}
     public record TeamAcceptRequest(@NotBlank @Size(min = 8, max = 72) String password) {}
+
+    // ---- Solicitudes de cambio, notificaciones y logros del cliente (docs/api-solicitudes-logros.md, ADR-012) ----
+    public record TrainingChangeRequest(@NotNull @Pattern(regexp = "ADD_EXERCISE|REPLACE_EXERCISE|MODIFY_EXERCISE|REMOVE_EXERCISE") String action,
+                                        @NotNull Long assignmentId, Long workoutItemId, Long exerciseId,
+                                        @Min(1) @Max(20) Integer sets, @Min(1) @Max(200) Integer reps,
+                                        @DecimalMin("0") @DecimalMax("1000") BigDecimal weightKg,
+                                        @Min(0) @Max(900) Integer restSeconds, @Size(max = 500) String reason) {}
+    public record NutritionChangeRequest(@NotNull @Pattern(regexp = "CHANGE_TARGETS|REPLACE_FOOD") String action,
+                                         @NotNull Long planId, @Min(800) @Max(6000) Integer kcal,
+                                         @DecimalMin("0") @DecimalMax("1000") BigDecimal proteinG,
+                                         @DecimalMin("0") @DecimalMax("1500") BigDecimal carbsG,
+                                         @DecimalMin("0") @DecimalMax("500") BigDecimal fatG,
+                                         Long mealId, Long foodId, @DecimalMin("1") @DecimalMax("5000") BigDecimal grams,
+                                         @Size(max = 500) String reason) {}
+    public record DecisionRequest(@Size(max = 500) String note) {}
+    public record ChangeRequestDto(Long id, String kind, String action, String status, Long clientId, String clientName,
+                                   Long professionalId, String professionalName, Long assignmentId, Long workoutId,
+                                   String workoutName, Long workoutItemId, String targetExerciseName, Long exerciseId,
+                                   String exerciseName, Integer sets, Integer reps, BigDecimal weightKg, Integer restSeconds,
+                                   Long planId, String planName, Integer planVersion, boolean outdated, Long mealId,
+                                   Long foodId, String foodName, BigDecimal grams, Integer kcal, BigDecimal proteinG,
+                                   BigDecimal carbsG, BigDecimal fatG, String reason, String decisionNote,
+                                   LocalDateTime createdAt, LocalDateTime decidedAt, Long decidedById,
+                                   Long appliedWorkoutId, boolean copiedWorkout) {}
+    public record ChangeRequestEventDto(LocalDateTime at, Long actorId, String actorName, String action, String note) {}
+
+    public record NotificationDto(Long id, String type, String title, String body, String refType, Long refId,
+                                  LocalDateTime createdAt, LocalDateTime readAt) {}
+    public record CountDto(long count) {}
+
+    public record ClientStatsDto(int workoutsCompleted, int activeDays, int currentStreak, int bestStreak, int totalSets,
+                                 long totalReps, BigDecimal totalVolumeKg, LocalDate lastActivity) {}
+    /** status: UNLOCKED | LOCKED | NO_DATA. progress/target nulos cuando no se pueden medir. */
+    public record ClientAchievementDto(Long id, String name, String description, String groupLabel, String badge, String badgeUrl,
+                                       String tier, int points, String status, LocalDate unlockedOn, BigDecimal progress,
+                                       BigDecimal target, Integer percent) {}
+    public record ClientAchievementCategoryDto(Long id, String name, String icon, List<ClientAchievementDto> achievements) {}
+    public record ClientAchievementsDto(ClientStatsDto stats, int points, int level, String levelName, int xpInLevel,
+                                        int xpForNextLevel, int unlockedCount, int totalCount,
+                                        List<ClientAchievementDto> almost, List<ClientAchievementCategoryDto> categories) {}
 }

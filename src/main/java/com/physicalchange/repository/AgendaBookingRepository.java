@@ -8,6 +8,7 @@ public interface AgendaBookingRepository extends JpaRepository<AgendaBooking, Lo
     List<AgendaBooking> findByEventIdOrderByCreatedAtAsc(Long eventId);
     List<AgendaBooking> findByEventIdIn(Collection<Long> eventIds);
     Optional<AgendaBooking> findByEventIdAndClientId(Long eventId, Long clientId);
+    List<AgendaBooking> findByClientIdAndStatus(Long clientId, String status);
     Optional<AgendaBooking> findFirstByEventIdAndStatusOrderByCreatedAtAscIdAsc(Long eventId, String status);
     long countByEventIdAndStatusIn(Long eventId, Collection<String> statuses);
     @Modifying void deleteByEventId(Long eventId);
