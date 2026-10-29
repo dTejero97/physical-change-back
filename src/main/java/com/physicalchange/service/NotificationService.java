@@ -19,6 +19,7 @@ public class NotificationService {
     public static final String CHANGE_REQUEST_REJECTED = "CHANGE_REQUEST_REJECTED";
     public static final String PLAN_UPDATED = "PLAN_UPDATED";
     public static final String ACHIEVEMENT_UNLOCKED = "ACHIEVEMENT_UNLOCKED";
+    public static final String ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED";
     private static final int PAGE = 50;
 
     private final NotificationRepository repo;

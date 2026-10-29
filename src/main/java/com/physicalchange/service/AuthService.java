@@ -3,6 +3,7 @@ package com.physicalchange.service;
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
+import com.physicalchange.repository.ClientOnboardingRepository;
 import com.physicalchange.repository.UserRepository;
 import com.physicalchange.security.*;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -13,28 +14,33 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
     private final UserRepository users; private final PasswordEncoder enc; private final JwtService jwt; private final AccessService access;
-    private final LoginAttempts attempts;
+    private final LoginAttempts attempts; private final ClientOnboardingRepository onboardings;
     /** Hash de relleno: si el email no existe se compara igual, para que el tiempo de respuesta no revele qué cuentas existen. */
     private final String dummyHash;
-    public AuthService(UserRepository u, PasswordEncoder e, JwtService j, AccessService a, LoginAttempts la) {
-        users = u; enc = e; jwt = j; access = a; attempts = la; dummyHash = e.encode("relleno-para-tiempo-constante");
+    public AuthService(UserRepository u, PasswordEncoder e, JwtService j, AccessService a, LoginAttempts la, ClientOnboardingRepository o) {
+        users = u; enc = e; jwt = j; access = a; attempts = la; onboardings = o; dummyHash = e.encode("relleno-para-tiempo-constante");
     }
 
     /** DTO simple (flag propio del usuario). */
     public static UserDto toDto(AppUser u) {
         return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), u.isNutritionEnabled(),
-                u.isTrainingEnabled(), u.getNutritionistId());
+                u.isTrainingEnabled(), u.getNutritionistId(), null);
     }
 
-    /** DTO de perfil: para un CLIENT, los servicios indican si tiene responsable de nutrición y de entrenamiento (ADR-013). */
+    /**
+     * DTO de perfil: para un CLIENT, los servicios indican si tiene responsable de nutrición y de entrenamiento (ADR-013)
+     * y onboardingCompleted si ya terminó el asistente de bienvenida (null en el resto de roles).
+     */
     @Transactional(readOnly = true)
     public UserDto profile(AppUser u) {
         boolean n = u.isNutritionEnabled(), t = u.isTrainingEnabled();
+        Boolean onboarding = null;
         if (u.getRole() == Role.CLIENT) {
             n = access.nutritionResponsibleOf(u) != null;
             t = access.trainingResponsibleOf(u) != null;
+            onboarding = onboardings.isCompleted(u.getId());
         }
-        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), n, t, u.getNutritionistId());
+        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), n, t, u.getNutritionistId(), onboarding);
     }
 
     /** Servicios del profesional (ADR-013 §1): entrenamiento, nutrición o ambos. */

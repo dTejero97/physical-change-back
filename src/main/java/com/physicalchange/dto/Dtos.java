@@ -21,7 +21,7 @@ public final class Dtos {
      * de nutrición / de entrenamiento. nutritionistId: responsable de nutrición asignado por el ADMIN (ADR-013).
      */
     public record UserDto(Long id, String email, String fullName, Role role, Long trainerId, boolean nutritionEnabled,
-                          boolean trainingEnabled, Long nutritionistId) {}
+                          boolean trainingEnabled, Long nutritionistId, Boolean onboardingCompleted) {}
     /** Servicios que ofrece el profesional: al menos uno. */
     public record ServicesRequest(boolean training, boolean nutrition) {}
     /** null = sin nutricionista propio: lo lleva su entrenador, si ofrece nutrición. */
@@ -47,7 +47,7 @@ public final class Dtos {
                                        boolean appAccess,
                                        @Min(50) @Max(260) Integer heightCm,
                                        @DecimalMin("20") @DecimalMax("500") BigDecimal weightKg,
-                                       @NotNull @Pattern(regexp = "NONE|MALE|FEMALE") String gender,
+                                       @NotNull @Pattern(regexp = "NONE|MALE|FEMALE|OTHER") String gender,
                                        @Past LocalDate birthDate,
                                        @NotNull @Size(max = 2) List<@Pattern(regexp = SERVICES) String> services,
                                        @NotNull @Size(max = 50) List<Long> tagIds) {}
@@ -515,4 +515,18 @@ public final class Dtos {
     public record ClientAchievementsDto(ClientStatsDto stats, int points, int level, String levelName, int xpInLevel,
                                         int xpForNextLevel, int unlockedCount, int totalCount,
                                         List<ClientAchievementDto> almost, List<ClientAchievementCategoryDto> categories) {}
+
+    // ---- Asistente de bienvenida del cliente (docs/api-onboarding.md) ----
+    /**
+     * Respuestas del cliente. Las listas nunca son null (vacías si no hay respuesta). Los datos de salud van vacíos
+     * sin consentimiento. La petición (PUT) se lee como JSON para distinguir un campo ausente de uno a null.
+     */
+    public record OnboardingDto(Long clientId, LocalDate birthDate, BigDecimal weightKg, Integer heightCm, String gender,
+                                List<String> goals, String experience, String commitment, Integer techniqueLevel,
+                                String trainingStyle, String cardio, String dietStyle, Integer mealsPerDay,
+                                List<String> likedExercises, List<String> avoid, Boolean healthConsent,
+                                LocalDateTime healthConsentAt, List<String> injuries, String injuriesOther, String medicalNotes,
+                                List<String> conditions, Boolean foodAllergy, String allergyDetails, String specialDiet,
+                                String mustKeep, String dislikedFoods, String cooks, LocalDateTime completedAt,
+                                LocalDateTime updatedAt) {}
 }

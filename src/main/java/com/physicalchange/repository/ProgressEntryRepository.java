@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface ProgressEntryRepository extends JpaRepository<ProgressEntry, Long> {
     List<ProgressEntry> findByClientIdOrderByEntryDateAsc(Long clientId);
+    List<ProgressEntry> findByClientIdAndEntryDateOrderByIdAsc(Long clientId, java.time.LocalDate entryDate);
 }

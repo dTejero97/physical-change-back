@@ -7,6 +7,8 @@ import com.physicalchange.security.AccessService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -31,5 +33,22 @@ public class ProgressService {
         ProgressDto dto = dto(repo.save(e));
         publisher.publishEvent(new ClientActivityEvent(r.clientId()));
         return dto;
+    }
+
+    /**
+     * Peso del día con una nota (p. ej. el cuestionario inicial): actualiza el registro de hoy que ya tenga esa nota,
+     * o si no el primero de hoy, o crea uno. Así repetir el guardado no duplica registros.
+     */
+    @Transactional
+    public void recordTodayWeight(Long clientId, BigDecimal weightKg, String note) {
+        access.assertCanAccessClient(clientId);
+        LocalDate today = LocalDate.now();
+        List<ProgressEntry> todays = repo.findByClientIdAndEntryDateOrderByIdAsc(clientId, today);
+        ProgressEntry e = todays.stream().filter(x -> note.equals(x.getNotes())).findFirst()
+                .orElseGet(() -> todays.isEmpty() ? new ProgressEntry() : todays.get(0));
+        if (e.getId() == null) { e.setClientId(clientId); e.setEntryDate(today); }
+        if (e.getNotes() == null || e.getNotes().isBlank()) e.setNotes(note);
+        e.setWeightKg(weightKg);
+        repo.save(e);
     }
 }
