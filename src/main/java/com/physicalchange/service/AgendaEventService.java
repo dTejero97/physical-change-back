@@ -6,6 +6,7 @@ import com.physicalchange.exception.*;
 import com.physicalchange.repository.*;
 import com.physicalchange.security.*;
 import com.physicalchange.util.DateTimes;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
@@ -33,12 +34,13 @@ public class AgendaEventService {
     private final ClientDirectory directory;
     private final AccessService access;
     private final BonusService bonusService;
+    private final ApplicationEventPublisher publisher;
 
     public AgendaEventService(AgendaEventRepository e, AgendaBookingRepository b, SessionTypeService t, AgendaActivityService a,
                               FileService f, TagRefs tr, UserRepository u, ClientProfileRepository p, ClientDirectory d, AccessService ac,
-                              BonusService bs) {
+                              BonusService bs, ApplicationEventPublisher pub) {
         events = e; bookings = b; types = t; activity = a; files = f; tags = tr; users = u; profiles = p; directory = d; access = ac;
-        bonusService = bs;
+        bonusService = bs; publisher = pub;
     }
 
     /** Filtros opcionales de la lista y de los KPIs (vacío o nulo = sin filtrar). */
@@ -213,6 +215,8 @@ public class AgendaEventService {
             case "NO_SHOW" -> "NO_SHOW";
             default -> "BOOKED";
         });
+        // La asistencia cuenta para estadísticas y logros (sesiones, rachas, madrugones).
+        if ("ATTENDED".equals(old) || "ATTENDED".equals(r.status())) publisher.publishEvent(new ClientActivityEvent(b.getClientId()));
         return toDto(b, new HashMap<>());
     }
 

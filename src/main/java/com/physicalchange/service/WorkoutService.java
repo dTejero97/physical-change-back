@@ -8,6 +8,7 @@ import com.physicalchange.repository.*;
 import com.physicalchange.security.*;
 import com.physicalchange.util.TrainingMath;
 import org.springframework.data.domain.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -23,10 +24,11 @@ public class WorkoutService {
     private final ExerciseRepository exercises;
     private final ExerciseLogRepository logs;
     private final AccessService access;
+    private final ApplicationEventPublisher publisher;
 
     public WorkoutService(WorkoutRepository w, WorkoutItemRepository i, WorkoutAssignmentRepository a,
-                          ExerciseRepository e, ExerciseLogRepository l, AccessService ac) {
-        workouts = w; items = i; assignments = a; exercises = e; logs = l; access = ac;
+                          ExerciseRepository e, ExerciseLogRepository l, AccessService ac, ApplicationEventPublisher p) {
+        workouts = w; items = i; assignments = a; exercises = e; logs = l; access = ac; publisher = p;
     }
 
     // ---------- Rutinas ----------
@@ -129,6 +131,7 @@ public class WorkoutService {
         AuthUser me = access.current();
         if (me.role() != Role.CLIENT || !me.id().equals(a.getClientId())) throw new ForbiddenException("Solo el cliente asignado puede completarlo");
         a.setCompletedDate(LocalDate.now());
+        publisher.publishEvent(new ClientActivityEvent(a.getClientId()));
         return WorkoutMapper.toDto(a, workouts.findById(a.getWorkoutId()).orElseThrow());
     }
 

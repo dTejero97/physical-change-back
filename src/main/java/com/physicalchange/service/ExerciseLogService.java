@@ -7,6 +7,7 @@ import com.physicalchange.mapper.ExerciseLogMapper;
 import com.physicalchange.repository.*;
 import com.physicalchange.security.*;
 import com.physicalchange.util.TrainingMath;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -23,10 +24,11 @@ public class ExerciseLogService {
     private final WorkoutAssignmentRepository assignments;
     private final WorkoutItemRepository items;
     private final AccessService access;
+    private final ApplicationEventPublisher publisher;
 
     public ExerciseLogService(ExerciseLogRepository l, ExerciseRepository e, WorkoutAssignmentRepository a,
-                              WorkoutItemRepository i, AccessService ac) {
-        logs = l; exercises = e; assignments = a; items = i; access = ac;
+                              WorkoutItemRepository i, AccessService ac, ApplicationEventPublisher p) {
+        logs = l; exercises = e; assignments = a; items = i; access = ac; publisher = p;
     }
 
     /** El cliente registra sus propias series; el entrenador (o admin) las registra para un cliente suyo. */
@@ -59,7 +61,9 @@ public class ExerciseLogService {
         l.setSetNumber(r.setNumber());
         l.setReps(r.reps());
         l.setWeightKg(r.weightKg());
-        return ExerciseLogMapper.toDto(logs.save(l), e);
+        ExerciseLogDto dto = ExerciseLogMapper.toDto(logs.save(l), e);
+        publisher.publishEvent(new ClientActivityEvent(clientId));
+        return dto;
     }
 
     @Transactional(readOnly = true)
@@ -75,6 +79,8 @@ public class ExerciseLogService {
         ExerciseLog l = logs.findById(id).orElseThrow(() -> new NotFoundException("Registro no encontrado"));
         access.assertCanAccessClient(l.getClientId());
         logs.delete(l);
+        // Recalcula estadísticas; los logros ya conseguidos no se pierden (ADR-007 §3).
+        publisher.publishEvent(new ClientActivityEvent(l.getClientId()));
     }
 
     /**
