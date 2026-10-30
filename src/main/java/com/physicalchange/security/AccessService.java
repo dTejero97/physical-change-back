@@ -89,7 +89,21 @@ public class AccessService {
         assertCanAccessClient(clientId);
     }
 
-    /** Crear o cambiar rutinas: el espacio de trabajo tiene que ofrecer entrenamiento. ADMIN siempre. */
+    /**
+     * Cuestionario inicial (datos de salud, T196/B2): ADMIN o un responsable vigente del cliente (de entrenamiento o
+     * de nutrición). Un `trainerId` que ya no le presta ningún servicio no basta, y el colaborador tampoco.
+     */
+    public void assertCanReadOnboarding(Long clientId) {
+        AuthUser me = current();
+        if (me.role() == Role.ADMIN) { client(clientId); return; }
+        if (me.role() == Role.TRAINER) {
+            AppUser c = client(clientId);
+            if (me.id().equals(trainingResponsibleOf(c)) || me.id().equals(nutritionResponsibleOf(c))) return;
+        }
+        throw new ForbiddenException("No eres responsable de este cliente");
+    }
+
+    /** Crear o cambiar rutinas:el espacio de trabajo tiene que ofrecer entrenamiento. ADMIN siempre. */
     public void assertOffersTraining() {
         if (current().role() == Role.ADMIN) return;
         AppUser pro = users.findById(workspaceId()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));

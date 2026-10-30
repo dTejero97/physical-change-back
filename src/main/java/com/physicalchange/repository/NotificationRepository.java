@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
     List<Notification> findByUserIdOrderByCreatedAtDescIdDesc(Long userId, Pageable p);
@@ -13,6 +14,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     long countByUserIdAndReadAtIsNull(Long userId);
     long countByUserIdAndType(Long userId, String type);
     boolean existsByUserIdAndTypeAndReadAtIsNull(Long userId, String type);
+    boolean existsByUserIdAndTypeAndRefIdAndReadAtIsNull(Long userId, String type, Long refId);
+    Optional<Notification> findFirstByUserIdAndTypeAndRefIdOrderByCreatedAtDescIdDesc(Long userId, String type, Long refId);
 
     @Modifying
     @Query("update Notification n set n.readAt = :now where n.userId = :user and n.readAt is null")

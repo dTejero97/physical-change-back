@@ -36,18 +36,19 @@ public class ProgressService {
     }
 
     /**
-     * Peso del día con una nota (p. ej. el cuestionario inicial): actualiza el registro de hoy que ya tenga esa nota,
-     * o si no el primero de hoy, o crea uno. Así repetir el guardado no duplica registros.
+     * Peso del día con una nota (p. ej. el cuestionario inicial): actualiza el registro de hoy que ya tenga esa nota
+     * o crea uno propio. Repetir el guardado no duplica registros y nunca pisa otro registro del día (T196/B6).
      */
     @Transactional
     public void recordTodayWeight(Long clientId, BigDecimal weightKg, String note) {
         access.assertCanAccessClient(clientId);
         LocalDate today = LocalDate.now();
-        List<ProgressEntry> todays = repo.findByClientIdAndEntryDateOrderByIdAsc(clientId, today);
-        ProgressEntry e = todays.stream().filter(x -> note.equals(x.getNotes())).findFirst()
-                .orElseGet(() -> todays.isEmpty() ? new ProgressEntry() : todays.get(0));
-        if (e.getId() == null) { e.setClientId(clientId); e.setEntryDate(today); }
-        if (e.getNotes() == null || e.getNotes().isBlank()) e.setNotes(note);
+        ProgressEntry e = repo.findByClientIdAndEntryDateOrderByIdAsc(clientId, today).stream()
+                .filter(x -> note.equals(x.getNotes())).findFirst().orElseGet(() -> {
+                    ProgressEntry n = new ProgressEntry();
+                    n.setClientId(clientId); n.setEntryDate(today); n.setNotes(note);
+                    return n;
+                });
         e.setWeightKg(weightKg);
         repo.save(e);
     }

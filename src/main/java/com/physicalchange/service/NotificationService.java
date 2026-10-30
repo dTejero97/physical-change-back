@@ -38,6 +38,16 @@ public class NotificationService {
     @Transactional(readOnly = true)
     public boolean hasUnread(Long userId, String type) { return repo.existsByUserIdAndTypeAndReadAtIsNull(userId, type); }
 
+    /** Igual, pero solo los de esa referencia (p. ej. los que pidió un profesional concreto). */
+    @Transactional(readOnly = true)
+    public boolean hasUnread(Long userId, String type, Long refId) { return repo.existsByUserIdAndTypeAndRefIdAndReadAtIsNull(userId, type, refId); }
+
+    /** Fecha del último aviso de este tipo y referencia al usuario, leído o no; null si no hay ninguno. */
+    @Transactional(readOnly = true)
+    public LocalDateTime lastSent(Long userId, String type, Long refId) {
+        return repo.findFirstByUserIdAndTypeAndRefIdOrderByCreatedAtDescIdDesc(userId, type, refId).map(Notification::getCreatedAt).orElse(null);
+    }
+
     @Transactional(readOnly = true)
     public List<NotificationDto> mine(boolean unreadOnly) {
         Long me = access.current().id();

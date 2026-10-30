@@ -27,6 +27,8 @@ import java.util.*;
 public class OnboardingService {
     static final String INITIAL_NOTE = "Cuestionario inicial";
     private static final String REF = "CLIENT";
+    /** Enfriamiento de "Pedir que lo revise" por profesional y cliente (T196/B5). */
+    static final long REQUEST_COOLDOWN_MINUTES = 60;
 
     private static final List<String> GENDERS = List.of("MALE", "FEMALE", "OTHER");
     private static final List<String> GOALS = List.of("FAT_LOSS", "MUSCLE_GAIN", "PERFORMANCE", "HEALTH");
@@ -152,29 +154,35 @@ public class OnboardingService {
 
     // ---------- Profesional / ADMIN (solo lectura) ----------
 
-    /** ADMIN, su responsable de entrenamiento o su responsable de nutrición (ADR-013). */
+    /** ADMIN, su responsable vigente de entrenamiento o de nutrición (ADR-013, T196/B2). */
     @Transactional(readOnly = true)
     public OnboardingDto forClient(Long clientId) {
-        access.assertCanReadNutrition(clientId);
-        users.findById(clientId).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+        access.assertCanReadOnboarding(clientId);
         return dto(clientId);
     }
 
     /**
      * Pide al cliente que revise su cuestionario (T184): solo un aviso al cliente, no cambia nada.
-     * Si aún tiene sin leer uno igual, 409 para no repetirlo.
+     * Por profesional (T196/B5): 409 si aún tiene sin leer uno suyo; 429 si le pidió otro hace menos de
+     * {@link #REQUEST_COOLDOWN_MINUTES} minutos, aunque ya lo haya leído. El refId del aviso es quien lo pide.
      */
     @Transactional
     public void requestUpdate(Long clientId, String note) {
-        access.assertCanReadNutrition(clientId);
+        access.assertCanReadOnboarding(clientId);
         // Bloquea la fila del cliente: dos peticiones a la vez no crean dos avisos (la segunda ya ve el primero sin leer).
         users.lockById(clientId).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
-        if (notifications.hasUnread(clientId, NotificationService.ONBOARDING_UPDATE_REQUESTED))
-            throw new ConflictException("Ya se lo has pedido; aún no lo ha visto");
-        AppUser me = users.findById(access.current().id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+        Long meId = access.current().id();
+        String type = NotificationService.ONBOARDING_UPDATE_REQUESTED;
+        if (notifications.hasUnread(clientId, type, meId)) throw new ConflictException("Ya se lo has pedido; aún no lo ha visto");
+        LocalDateTime last = notifications.lastSent(clientId, type, meId);
+        if (last != null) {
+            long wait = ChronoUnit.SECONDS.between(LocalDateTime.now(), last.plusMinutes(REQUEST_COOLDOWN_MINUTES));
+            if (wait > 0) throw new TooManyRequestsException("Ya se lo pediste hace poco; espera un rato antes de volver a pedírselo", wait);
+        }
+        AppUser me = users.findById(meId).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
         String n = note == null ? "" : note.trim();
         String body = me.getFullName() + " te pide que revises tus datos." + (n.isEmpty() ? "" : " " + n);
-        notifications.notify(clientId, NotificationService.ONBOARDING_UPDATE_REQUESTED, "Revisa tu cuestionario", body, "ONBOARDING", clientId);
+        notifications.notify(clientId, type, "Revisa tu cuestionario", body, "ONBOARDING", meId);
     }
 
     // ---------- internos ----------

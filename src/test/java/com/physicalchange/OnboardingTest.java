@@ -31,6 +31,7 @@ class OnboardingTest {
     @Autowired PasswordEncoder enc;
     @Autowired JwtService jwt;
     @Autowired ObjectMapper json;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     String admin, trainer, nutritionist, otherTrainer, collaborator, client;
     Long trainerId, nutritionistId, clientId;
@@ -215,21 +216,70 @@ class OnboardingTest {
     @Test void elResponsablePideRevisarElCuestionario() throws Exception {
         put("{\"cardio\":\"MINIMAL\"}", 200);
         String url = "/api/clients/" + clientId + "/onboarding/request-update";
-        send("POST", url, trainer, "{\"note\":\"Cuéntame si sigue la molestia de rodilla\"}", 204);
+        send("POST", url, trainer, "{\"note\":\"¿Has cambiado de horario de entreno?\"}", 204);
         JsonNode mine = send("GET", "/api/notifications", client, null, 200);
         JsonNode n = null;
         for (JsonNode x : mine) if ("ONBOARDING_UPDATE_REQUESTED".equals(x.get("type").asText())) n = x;
         assertNotNull(n);
         assertEquals("Revisa tu cuestionario", n.get("title").asText());
-        assertTrue(n.get("body").asText().endsWith("te pide que revises tus datos. Cuéntame si sigue la molestia de rodilla"));
+        assertTrue(n.get("body").asText().endsWith("te pide que revises tus datos. ¿Has cambiado de horario de entreno?"));
         assertEquals("ONBOARDING", n.get("refType").asText());
+        assertEquals(trainerId, n.get("refId").asLong());                                 // quien lo pide (T196)
         // No toca el cuestionario.
         assertEquals("MINIMAL", send("GET", "/api/me/onboarding", client, null, 200).get("cardio").asText());
-        // Sin leer: no se repite. Leída: se puede volver a pedir (sin nota).
+        // Sin leer: ese profesional no lo repite, pero otro sí puede pedirlo (T196/B5).
         send("POST", url, trainer, null, 409);
-        send("POST", "/api/notifications/" + n.get("id").asLong() + "/read", client, null, 204);
         send("POST", url, admin, null, 204);
+        // Leída: el mismo profesional espera el enfriamiento (429 con Retry-After).
+        send("POST", "/api/notifications/" + n.get("id").asLong() + "/read", client, null, 204);
+        MvcResult r = mvc.perform(post(url).header("Authorization", trainer)).andExpect(status().is(429)).andReturn();
+        long retry = Long.parseLong(r.getResponse().getHeader("Retry-After"));
+        assertTrue(retry > 0 && retry <= 60 * 60, "Retry-After " + retry);
+        // Pasado el enfriamiento, se puede volver a pedir (sin nota).
+        jdbc.update("update NOTIFICATION set CREATED_AT = ? where ID = ?", java.time.LocalDateTime.now().minusMinutes(61), n.get("id").asLong());
+        send("POST", url, trainer, null, 204);
         send("POST", url, trainer, "{\"note\":\"" + "x".repeat(301) + "\"}", 400);
+    }
+
+    @Test void elTrainerIdSinServiciosNoVeElCuestionario() throws Exception {
+        // Su entrenador deja de entrenar y el cliente tiene otro nutricionista: ya no es responsable de nada (T196/B2).
+        AppUser c = users.findById(clientId).orElseThrow(); c.setNutritionistId(nutritionistId); users.save(c);
+        AppUser t = users.findById(trainerId).orElseThrow(); t.setTrainingEnabled(false); users.save(t);
+        String url = "/api/clients/" + clientId + "/onboarding";
+        send("GET", url, trainer, null, 403);
+        send("POST", url + "/request-update", trainer, null, 403);
+        send("GET", url, nutritionist, null, 200);
+        send("GET", url, admin, null, 200);
+        // Sin ningún servicio y sin nutricionista propio: tampoco.
+        c.setNutritionistId(null); users.save(c);
+        t.setNutritionEnabled(false); users.save(t);
+        send("GET", url, trainer, null, 403);
+        // Vuelve a entrenar: responsable de entrenamiento, lo ve.
+        t.setTrainingEnabled(true); users.save(t);
+        send("GET", url, trainer, null, 200);
+    }
+
+    @Test void elPesoDelCuestionarioNoPisaOtroRegistroDelDia() throws Exception {
+        ProgressEntry mine = new ProgressEntry();
+        mine.setClientId(clientId); mine.setEntryDate(LocalDate.now()); mine.setWeightKg(new BigDecimal("80.0")); mine.setNotes("Después de entrenar");
+        mine = progress.save(mine);
+        put("{\"weightKg\":78.5}", 200);
+        put("{\"weightKg\":78.0}", 200);
+        List<ProgressEntry> entries = progress.findByClientIdOrderByEntryDateAsc(clientId);
+        assertEquals(2, entries.size());
+        ProgressEntry other = progress.findById(mine.getId()).orElseThrow();
+        assertEquals(0, new BigDecimal("80.0").compareTo(other.getWeightKg()));
+        assertEquals("Después de entrenar", other.getNotes());
+        ProgressEntry initial = entries.stream().filter(e -> "Cuestionario inicial".equals(e.getNotes())).findFirst().orElseThrow();
+        assertEquals(0, new BigDecimal("78.0").compareTo(initial.getWeightKg()));
+    }
+
+    @Test void elClientIdDelCuerpoSeIgnora() throws Exception {
+        AppUser other = save("ob-x-" + UUID.randomUUID().toString().substring(0, 8) + "@test", Role.CLIENT, trainerId, false, true);
+        JsonNode o = put("{\"clientId\":" + other.getId() + ",\"cardio\":\"MINIMAL\"}", 200);
+        assertEquals(clientId, o.get("clientId").asLong());
+        assertEquals("MINIMAL", send("GET", "/api/me/onboarding", client, null, 200).get("cardio").asText());
+        assertTrue(send("GET", "/api/me/onboarding", token(other), null, 200).get("cardio").isNull());
     }
 
     /** Lanza las peticiones a la vez (misma salida de un latch) y devuelve sus códigos HTTP en orden. */
@@ -260,7 +310,7 @@ class OnboardingTest {
     @Test void dosPeticionesDeRevisionALaVezAvisanUnaVez() throws Exception {
         String url = "/api/clients/" + clientId + "/onboarding/request-update";
         List<Integer> codes = new java.util.ArrayList<>(together(List.of(
-                post(url).header("Authorization", trainer), post(url).header("Authorization", admin))));
+                post(url).header("Authorization", trainer), post(url).header("Authorization", trainer))));
         java.util.Collections.sort(codes);
         assertEquals(List.of(204, 409), codes);
         long count = 0;

@@ -1,6 +1,6 @@
 # API · Asistente de bienvenida del cliente (onboarding)
 
-- **Versión del contrato:** 1.1.0, 2026-10-29: 1.0.0 en T177, más `request-update` en T184.
+- **Versión del contrato:** 1.2.0, 2026-10-30: 1.0.0 en T177, más `request-update` en T184 (1.1.0); acceso solo de responsables vigentes, registro de progreso propio, `refId` y enfriamiento de `request-update` en T196 (1.2.0).
 - **Especificación:** `docs/fase6-onboarding.md`.
 - **Migración:** `V14__onboarding_cliente.sql`. La de Stripe (T127) pasa a ser V15.
 
@@ -66,8 +66,10 @@
   - El servidor distingue "ausente" de `null` (lectura con `JsonNode` o `Optional` en el servicio).
 - **Efectos:**
   - `birthDate`, `weightKg`, `heightCm` y `gender` se escriben en `client_profile`;
-  - si llega `weightKg`, se crea o actualiza el registro de progreso del cliente para **hoy**, con nota "Cuestionario inicial";
+  - si llega `weightKg`, se crea o actualiza el registro de progreso del cliente para **hoy** con nota "Cuestionario inicial". Solo se actualiza el que ya tenga esa nota: los demás registros del día no se tocan (v1.2.0, T196);
   - todo en una transacción.
+- Si el cuerpo trae `clientId`, se ignora: siempre se guarda el cuestionario de quien llama.
+- Los guardados y el `complete` del mismo cliente se serializan: el primer PUT y el `complete` a la vez no fallan (T185).
 - 200 → `OnboardingDto`. 400 por validación. 403 si no es CLIENT.
 
 ## `POST /api/me/onboarding/complete` — CLIENT
@@ -76,22 +78,26 @@
 
 ## `GET /api/clients/{clientId}/onboarding` — TRAINER, ADMIN
 - 200 → `OnboardingDto` (solo lectura).
-- Acceso: el ADMIN; su responsable de entrenamiento (`assertCanAccessClient`); o su responsable de nutrición (`assertCanReadNutrition`, ADR-013). El colaborador no.
-- 403 a cualquier otro.
+- Acceso (`assertCanReadOnboarding`, v1.2.0, T196): el ADMIN, su responsable **vigente** de entrenamiento (su entrenador, si ofrece entrenamiento) o su responsable vigente de nutrición (ADR-013). El colaborador no.
+- 403 a cualquier otro, también al `trainerId` que ya no le presta ningún servicio. 404 si el cliente no existe.
 
 ## `POST /api/clients/{clientId}/onboarding/request-update` — TRAINER, ADMIN (v1.1.0, T184)
 El profesional pide al cliente que revise y ajuste su cuestionario (respuesta a I-08).
 ```json
-{ "note": "Cuéntame si sigue la molestia de rodilla" }
+{ "note": "¿Has cambiado de horario? Revisa tus días de entreno" }
 ```
 - `note` es opcional, de 300 caracteres como máximo.
-- Mismo acceso que `GET /api/clients/{clientId}/onboarding`: el ADMIN o un responsable del cliente.
+  - **No debe llevar datos de salud** (lesiones, enfermedades, medicación…): la nota queda en la notificación y no se borra al retirar el consentimiento (Seguridad T182/B1). El front lo avisa junto al campo.
+- Mismo acceso que `GET /api/clients/{clientId}/onboarding`: el ADMIN o un responsable vigente del cliente.
 - Crea una notificación al cliente de tipo `ONBOARDING_UPDATE_REQUESTED`:
   - título "Revisa tu cuestionario";
   - cuerpo "{profesional} te pide que revises tus datos. {nota}";
-  - `refType` `ONBOARDING`.
+  - `refType` `ONBOARDING` y `refId` = id del profesional (o ADMIN) que lo pide (v1.2.0; antes era el id del cliente).
 - **No cambia nada del cuestionario**: el cliente lo edita él mismo (`PUT /api/me/onboarding`).
-- **Sin repetir:** si el cliente tiene una notificación de este tipo **sin leer**, responde 409 "Ya se lo has pedido; aún no lo ha visto".
+- **Sin repetir, por profesional** (v1.2.0, T196/B5):
+  - si el cliente tiene **sin leer** un aviso de este tipo **del mismo profesional**, 409 "Ya se lo has pedido; aún no lo ha visto". El aviso de otro profesional no bloquea;
+  - si el mismo profesional se lo pidió hace menos de **60 minutos** (aunque ya esté leído), 429 con cabecera `Retry-After` (segundos que faltan);
+  - dos peticiones a la vez del mismo profesional crean un solo aviso (T185).
 - 204.
 
 ## Cambio en `GET /api/auth/me`
