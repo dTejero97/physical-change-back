@@ -49,6 +49,9 @@ Reglas comunes
 
 `BookingDto { id, eventId, clientId, clientName, status, createdAt }` · `status`: BOOKED | WAITLIST | CANCELLED | ATTENDED | NO_SHOW.
 
+- **Lista de sesiones reservables para el cliente:** `GET /api/me/agenda/available?from&to`, en `api-cliente-seguimiento.md` (T201).
+  "La sesión ya ha empezado" se calcula en la zona de la plataforma (`app.timezone`, Europe/Madrid; ADR-008).
+
 ## KPIs — `GET /api/agenda/stats?from&to` (mismos filtros que la lista de eventos)
 `StatsDto { totalSessions, inPerson, online, booked, cancelled, waitlist, attended, attendancePct, vouchersRedeemed }`
 Solo cuentan eventos SESSION. `booked` = BOOKED + ATTENDED + NO_SHOW; `attendancePct` = attended / booked (0 si no hay). `vouchersRedeemed` = 0 hasta que existan bonos (T10).
