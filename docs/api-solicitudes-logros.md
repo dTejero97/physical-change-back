@@ -1,6 +1,6 @@
 # API · Solicitudes de cambio, notificaciones, objetivos nutricionales y logros del cliente
 
-Versión 1.0.0 · 2026-10-29 · Tareas T152–T157 · Decisión: `docs/adr/ADR-012-solicitudes-notificaciones-logros.md` (raíz del proyecto)
+Versión 1.1.0 · 2026-10-30 (1.0.0 en T152–T157; 1.1.0 añade los nombres de los responsables en `UserDto`, T185) · Tareas T152–T157, T185 · Decisión: `docs/adr/ADR-012-solicitudes-notificaciones-logros.md` (raíz del proyecto)
 
 Todas las rutas exigen JWT. Errores con el formato habitual (`ErrorResponse`): 400 validación, 403 sin permiso, 404 no existe o no es tuyo, 409 conflicto de estado.
 
@@ -144,3 +144,6 @@ Profesionales activos y sus servicios: `[{ "id", "fullName", "trainingEnabled", 
 ### Cambios en `UserDto`
 - Campos nuevos: `trainingEnabled` y `nutritionistId`.
 - En `GET /api/auth/me` de un CLIENT, `nutritionEnabled` y `trainingEnabled` indican si tiene responsable de cada tipo.
+- **T185 (2026-10-29):** `UserDto` añade `trainingResponsibleName` y `nutritionResponsibleName`.
+  - Solo los rellena `GET /api/auth/me` de un CLIENT, con el nombre de sus responsables vigentes. Si no tiene, o en el resto de roles y DTO, van a `null`.
+  - Sirven para el Inicio y el Perfil del cliente. No exponen ningún listado de profesionales.

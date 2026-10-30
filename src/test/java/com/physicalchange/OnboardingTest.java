@@ -232,6 +232,57 @@ class OnboardingTest {
         send("POST", url, trainer, "{\"note\":\"" + "x".repeat(301) + "\"}", 400);
     }
 
+    /** Lanza las peticiones a la vez (misma salida de un latch) y devuelve sus códigos HTTP en orden. */
+    private List<Integer> together(List<org.springframework.test.web.servlet.RequestBuilder> requests) throws Exception {
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(requests.size());
+        try {
+            List<java.util.concurrent.Future<Integer>> futures = new java.util.ArrayList<>();
+            for (var r : requests) futures.add(ex.submit(() -> { go.await(); return mvc.perform(r).andReturn().getResponse().getStatus(); }));
+            go.countDown();
+            List<Integer> codes = new java.util.ArrayList<>();
+            for (var f : futures) codes.add(f.get(30, java.util.concurrent.TimeUnit.SECONDS));
+            return codes;
+        } finally { ex.shutdownNow(); }
+    }
+
+    @Test void primerGuardadoYCompletarALaVezNoFallan() throws Exception {
+        List<Integer> codes = together(List.of(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/me/onboarding").header("Authorization", client).contentType("application/json").content("{\"cardio\":\"MINIMAL\"}"),
+                post("/api/me/onboarding/complete").header("Authorization", client)));
+        assertEquals(List.of(200, 200), codes);
+        JsonNode o = send("GET", "/api/me/onboarding", client, null, 200);
+        assertEquals("MINIMAL", o.get("cardio").asText());
+        assertFalse(o.get("completedAt").isNull());
+        assertEquals(1, onboardingNotifications(trainer));
+    }
+
+    @Test void dosPeticionesDeRevisionALaVezAvisanUnaVez() throws Exception {
+        String url = "/api/clients/" + clientId + "/onboarding/request-update";
+        List<Integer> codes = new java.util.ArrayList<>(together(List.of(
+                post(url).header("Authorization", trainer), post(url).header("Authorization", admin))));
+        java.util.Collections.sort(codes);
+        assertEquals(List.of(204, 409), codes);
+        long count = 0;
+        for (JsonNode x : send("GET", "/api/notifications", client, null, 200))
+            if ("ONBOARDING_UPDATE_REQUESTED".equals(x.get("type").asText())) count++;
+        assertEquals(1, count);
+    }
+
+    @Test void elPerfilDelClienteTraeElNombreDeSusResponsables() throws Exception {
+        JsonNode me = send("GET", "/api/auth/me", client, null, 200);
+        String trainerName = users.findById(trainerId).orElseThrow().getFullName();
+        assertEquals(trainerName, me.get("trainingResponsibleName").asText());
+        assertEquals(trainerName, me.get("nutritionResponsibleName").asText());   // su entrenador también lleva la nutrición
+        AppUser c = users.findById(clientId).orElseThrow(); c.setNutritionistId(nutritionistId); users.save(c);
+        me = send("GET", "/api/auth/me", client, null, 200);
+        assertEquals(trainerName, me.get("trainingResponsibleName").asText());
+        assertEquals(users.findById(nutritionistId).orElseThrow().getFullName(), me.get("nutritionResponsibleName").asText());
+        JsonNode pro = send("GET", "/api/auth/me", trainer, null, 200);
+        assertTrue(pro.get("trainingResponsibleName").isNull());
+        assertTrue(pro.get("nutritionResponsibleName").isNull());
+    }
+
     @Test void soloLosResponsablesPidenRevisarlo() throws Exception {
         String url = "/api/clients/" + clientId + "/onboarding/request-update";
         send("POST", url, otherTrainer, null, 403);

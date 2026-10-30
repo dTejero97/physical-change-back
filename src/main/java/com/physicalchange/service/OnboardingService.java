@@ -68,7 +68,7 @@ public class OnboardingService {
     public OnboardingDto update(JsonNode body) {
         if (body == null || !body.isObject()) throw new BadRequestException("Petición no válida");
         Long clientId = currentClient().getId();
-        ClientOnboarding o = repo.lockById(clientId).orElseGet(() -> new ClientOnboarding(clientId));
+        ClientOnboarding o = lockOnboarding(clientId).orElseGet(() -> new ClientOnboarding(clientId));
 
         // Paso 1 · datos básicos, en la ficha del cliente.
         BigDecimal newWeight = null;
@@ -135,7 +135,7 @@ public class OnboardingService {
     @Transactional
     public OnboardingDto complete() {
         AppUser client = currentClient();
-        ClientOnboarding o = repo.lockById(client.getId()).orElseGet(() -> repo.saveAndFlush(new ClientOnboarding(client.getId())));
+        ClientOnboarding o = lockOnboarding(client.getId()).orElseGet(() -> repo.saveAndFlush(new ClientOnboarding(client.getId())));
         if (o.getCompletedAt() == null) {
             o.setCompletedAt(now());
             o.touch();
@@ -167,7 +167,8 @@ public class OnboardingService {
     @Transactional
     public void requestUpdate(Long clientId, String note) {
         access.assertCanReadNutrition(clientId);
-        users.findById(clientId).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+        // Bloquea la fila del cliente: dos peticiones a la vez no crean dos avisos (la segunda ya ve el primero sin leer).
+        users.lockById(clientId).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
         if (notifications.hasUnread(clientId, NotificationService.ONBOARDING_UPDATE_REQUESTED))
             throw new ConflictException("Ya se lo has pedido; aún no lo ha visto");
         AppUser me = users.findById(access.current().id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
@@ -177,6 +178,15 @@ public class OnboardingService {
     }
 
     // ---------- internos ----------
+
+    /**
+     * Serializa los guardados y el "completar" del mismo cliente bloqueando su fila de usuario, que siempre existe:
+     * así la primera inserción del cuestionario no choca aunque lleguen dos peticiones a la vez (T185) y solo se avisa una vez.
+     */
+    private Optional<ClientOnboarding> lockOnboarding(Long clientId) {
+        users.lockById(clientId);
+        return repo.findById(clientId);
+    }
 
     private AppUser currentClient() {
         AuthUser me = access.current();

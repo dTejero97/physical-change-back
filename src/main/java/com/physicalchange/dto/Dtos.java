@@ -19,9 +19,12 @@ public final class Dtos {
     /**
      * nutritionEnabled / trainingEnabled: en TRAINER son sus servicios; en CLIENT (perfil) indican si tiene responsable
      * de nutrición / de entrenamiento. nutritionistId: responsable de nutrición asignado por el ADMIN (ADR-013).
+     * trainingResponsibleName / nutritionResponsibleName: solo en el perfil de un CLIENT, nombre de sus responsables
+     * vigentes (T185); null si no tiene o en el resto de casos.
      */
     public record UserDto(Long id, String email, String fullName, Role role, Long trainerId, boolean nutritionEnabled,
-                          boolean trainingEnabled, Long nutritionistId, Boolean onboardingCompleted) {}
+                          boolean trainingEnabled, Long nutritionistId, Boolean onboardingCompleted,
+                          String trainingResponsibleName, String nutritionResponsibleName) {}
     /** Servicios que ofrece el profesional: al menos uno. */
     public record ServicesRequest(boolean training, boolean nutrition) {}
     /** null = sin nutricionista propio: lo lleva su entrenador, si ofrece nutrición. */

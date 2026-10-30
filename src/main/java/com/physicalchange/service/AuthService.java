@@ -24,23 +24,33 @@ public class AuthService {
     /** DTO simple (flag propio del usuario). */
     public static UserDto toDto(AppUser u) {
         return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), u.isNutritionEnabled(),
-                u.isTrainingEnabled(), u.getNutritionistId(), null);
+                u.isTrainingEnabled(), u.getNutritionistId(), null, null, null);
     }
 
     /**
      * DTO de perfil: para un CLIENT, los servicios indican si tiene responsable de nutrición y de entrenamiento (ADR-013)
-     * y onboardingCompleted si ya terminó el asistente de bienvenida (null en el resto de roles).
+     * onboardingCompleted si ya terminó el asistente de bienvenida y el nombre de sus responsables vigentes (T185);
+     * todo ello null en el resto de roles.
      */
     @Transactional(readOnly = true)
     public UserDto profile(AppUser u) {
         boolean n = u.isNutritionEnabled(), t = u.isTrainingEnabled();
         Boolean onboarding = null;
+        String trainingName = null, nutritionName = null;
         if (u.getRole() == Role.CLIENT) {
-            n = access.nutritionResponsibleOf(u) != null;
-            t = access.trainingResponsibleOf(u) != null;
+            Long nutrition = access.nutritionResponsibleOf(u), training = access.trainingResponsibleOf(u);
+            n = nutrition != null;
+            t = training != null;
             onboarding = onboardings.isCompleted(u.getId());
+            trainingName = nameOf(training);
+            nutritionName = nameOf(nutrition);
         }
-        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), n, t, u.getNutritionistId(), onboarding);
+        return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), n, t, u.getNutritionistId(), onboarding,
+                trainingName, nutritionName);
+    }
+
+    private String nameOf(Long userId) {
+        return userId == null ? null : users.findById(userId).map(AppUser::getFullName).orElse(null);
     }
 
     /** Servicios del profesional (ADR-013 §1): entrenamiento, nutrición o ambos. */
