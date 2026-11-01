@@ -19,6 +19,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConflictException.class) ResponseEntity<ErrorResponse> cf(ConflictException e) { return build(HttpStatus.CONFLICT, e.getMessage()); }
     @ExceptionHandler(BadRequestException.class) ResponseEntity<ErrorResponse> br(BadRequestException e) { return build(HttpStatus.BAD_REQUEST, e.getMessage()); }
     @ExceptionHandler(GoneException.class) ResponseEntity<ErrorResponse> gn(GoneException e) { return build(HttpStatus.GONE, e.getMessage()); }
+    @ExceptionHandler(BadGatewayException.class) ResponseEntity<ErrorResponse> bg(BadGatewayException e) { return build(HttpStatus.BAD_GATEWAY, e.getMessage()); }
+    /** Bloqueo optimista (@Version): otra petición o el job cambió el recurso a la vez (p. ej. publicaciones del calendario). */
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    ResponseEntity<ErrorResponse> stale(Exception e) { return build(HttpStatus.CONFLICT, "Otra persona ha cambiado este elemento; recarga y vuelve a intentarlo"); }
     @ExceptionHandler(AiException.class) ResponseEntity<ErrorResponse> ai(AiException e) {
         ResponseEntity<ErrorResponse> r = build(HttpStatus.valueOf(e.status()), e.getMessage());
         return e.retryAfterSeconds() == null ? r

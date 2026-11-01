@@ -37,6 +37,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/clients", "/api/clients/profiles", "/api/clients/{id}", "/api/clients/{id}/assignments")
                     .hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 .requestMatchers("/api/workouts/**").hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
+                // Generador de contenido (ADR-014 §9): el servicio exige al colaborador el permiso can_use_content;
+                // gestionar cuentas y la IA quedan solo para ADMIN y TRAINER (@PreAuthorize en los controladores).
+                .requestMatchers("/api/content/**").hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 .requestMatchers("/api/clients/**", "/api/reports/**", "/api/library/**", "/api/files/**").hasAnyRole("ADMIN", "TRAINER")
                 .requestMatchers("/api/auth/**", "/api/team/me", "/api/exercises", "/api/exercises/**").authenticated()
                 .requestMatchers(HttpMethod.GET, "/api/exercise-logs/client/**", "/api/progress/client/**", "/api/progress/strength/**",

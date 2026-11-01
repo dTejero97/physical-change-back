@@ -25,3 +25,8 @@ app:
     password: admin
   rate-limit:
     enabled: false          # los límites por IP se prueban en RateLimitTest con valores bajos
+  content:
+    scheduler-enabled: false   # el job de publicación se invoca a mano en los tests (ContentPublishJob.runOnce)
+    process-on-read: false
+  # app.social.token-key: sin clave las redes quedan NOT_CONFIGURED; los tests que la necesitan la generan al arrancar
+  # (@DynamicPropertySource con una clave aleatoria): nunca hay una clave en el repositorio.

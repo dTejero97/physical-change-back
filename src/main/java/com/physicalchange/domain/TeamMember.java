@@ -17,6 +17,8 @@ public class TeamMember {
     @Column(name = "CAN_ASSIGN_ROUTINES", nullable = false) private boolean canAssignRoutines;
     @Column(name = "CAN_MANAGE_APPOINTMENTS", nullable = false) private boolean canManageAppointments;
     @Column(name = "CAN_MESSAGE_CLIENTS", nullable = false) private boolean canMessageClients;
+    /** Generador de contenido (V15, ADR-014 §9). Lo cambia solo el profesional (endpoint en T198). */
+    @Column(name = "CAN_USE_CONTENT", nullable = false) private boolean canUseContent;
 
     @ElementCollection
     @CollectionTable(name = "COLLABORATOR_CLIENT", joinColumns = @JoinColumn(name = "COLLABORATOR_ID"))
@@ -40,5 +42,7 @@ public class TeamMember {
     public void setPermissions(boolean assign, boolean appointments, boolean messages) {
         this.canAssignRoutines = assign; this.canManageAppointments = appointments; this.canMessageClients = messages;
     }
+    public boolean isCanUseContent() { return canUseContent; }
+    public void setCanUseContent(boolean c) { this.canUseContent = c; }
     public Set<Long> getClientIds() { return clientIds; }
 }
