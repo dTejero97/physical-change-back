@@ -38,9 +38,20 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, e.getBindingResult().getFieldErrors().stream()
                 .map(f -> f.getField() + ": " + f.getDefaultMessage()).collect(Collectors.joining("; ")));
     }
-    /** Archivos de más de 10 MB (ADR-001): lo corta el servidor o el propio servicio. */
+    /** Archivos de más de 10 MB (ADR-001): lo corta el servidor o el propio servicio. En los fondos, con su código (api-fondos.md). */
     @ExceptionHandler({PayloadTooLargeException.class, org.springframework.web.multipart.MaxUploadSizeExceededException.class})
-    ResponseEntity<ErrorResponse> big(Exception e) { return build(HttpStatus.PAYLOAD_TOO_LARGE, "El archivo supera los 10 MB"); }
+    ResponseEntity<?> big(Exception e, jakarta.servlet.http.HttpServletRequest req) {
+        if (req.getRequestURI() != null && req.getRequestURI().startsWith("/api/backgrounds"))
+            return background(new BackgroundException(HttpStatus.PAYLOAD_TOO_LARGE, "BACKGROUND_TOO_LARGE", "La imagen supera el máximo de 10 MB."));
+        return build(HttpStatus.PAYLOAD_TOO_LARGE, "El archivo supera los 10 MB");
+    }
+    /** Fondos de la página de carga: código estable y todos los motivos de rechazo (docs/api-fondos.md). */
+    @ExceptionHandler(BackgroundException.class)
+    ResponseEntity<com.physicalchange.dto.Dtos.BackgroundErrorResponse> background(BackgroundException e) {
+        HttpStatus s = e.status();
+        return ResponseEntity.status(s).body(new com.physicalchange.dto.Dtos.BackgroundErrorResponse(Instant.now(), s.value(), s.getReasonPhrase(),
+                e.getMessage(), e.code(), e.reasons(), e.width(), e.height(), e.sizeBytes()));
+    }
     /** Errores del cliente que antes acababan en 500 (propuesta de QA). */
     @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
     ResponseEntity<ErrorResponse> method(Exception e) { return build(HttpStatus.METHOD_NOT_ALLOWED, "Método no permitido"); }

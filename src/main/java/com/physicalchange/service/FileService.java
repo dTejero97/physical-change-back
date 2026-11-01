@@ -142,7 +142,35 @@ public class FileService {
 
     /** Borrado por el dueño desde la API. */
     @Transactional
-    public void delete(Long id) { remove(owned(id, null)); }
+    public void delete(Long id) {
+        StoredFile f = owned(id, null);
+        // Los fondos tienen sus reglas de borrado (L-05: ni el activo ni los iniciales): solo por /api/backgrounds.
+        if (BACKGROUND.equals(f.getPurpose())) throw new BadRequestException("Los fondos se eliminan desde la galería de fondos");
+        remove(f);
+    }
+
+    /** Propósito de los originales y variantes de los fondos de la página de carga (T208); no se aceptan en /api/files. */
+    public static final String BACKGROUND = "BACKGROUND";
+
+    /**
+     * Guarda contenido ya validado por otro servicio (fondos, T208) en el almacenamiento activo, con la cuota del dueño.
+     * Debe llamarse dentro de una transacción.
+     */
+    public StoredFile storeValidated(Long owner, String name, String contentType, byte[] bytes, String purpose) {
+        checkQuota(owner, bytes.length);
+        StoredFile f = files.save(newFile(owner, cleanName(name), contentType, bytes.length, purpose));
+        active.save(f, bytes);
+        return f;
+    }
+
+    /** Contenido de un archivo (base de datos o R2). */
+    public byte[] content(StoredFile f) { return storageFor(f).read(f); }
+
+    /** URL GET prefirmada si el archivo está en R2; null si se sirve desde la base de datos. */
+    public String directDownloadUrl(StoredFile f, Duration ttl) {
+        FileStorage s = storageFor(f);
+        return s.direct() ? s.downloadUrl(f, ttl) : null;
+    }
 
     /** Archivo propio (o de cualquiera si es ADMIN) y, si se indica, con ese propósito y ya subido. */
     public StoredFile owned(Long id, String purpose) {
