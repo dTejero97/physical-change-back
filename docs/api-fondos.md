@@ -1,6 +1,12 @@
 # API · Fondos de la página de carga
 
-- **Versión del contrato:** 1.0.0, 2026-11-01 (T208).
+- **Versión del contrato:** 2.0.0, 2026-11-01 (T215, correcciones de la revisión de seguridad T211). Anterior: 1.0.0 (T208).
+- **Cambios de la 2.0.0** (incompatibles para el front, ver "Indicaciones para el front"):
+  - `PublicBackgroundDto.original` es `null` si el fondo tiene variantes (todos salvo los WebP); `PublicBackgroundDto.name` es genérico (`"Fondo personalizado"`) en los fondos subidos.
+  - `GET /api/public/backgrounds/{id}/original` sin firma solo responde si el fondo no tiene variantes (WebP); en la galería la URL del `original` va firmada salvo en ese caso.
+  - El alias `active/{name}` ya no cae al original salvo en WebP: si falta la variante, sirve la `w*` más ancha.
+  - `Cache-Control` sin firma: 24 h solo para los iniciales; 300 s para los subidos.
+  - El original se guarda **sin metadatos** (EXIF, XMP, IPTC, comentarios, textos PNG); JPEG progresivo ≤ 12 MP; JPEG aritmético, sin pérdida o jerárquico se rechaza; ≤ 64 barridos (`SOS`).
 - **Diseño:** `docs/diseno-loading-page.md` (§5 página de carga, §6 galería, dudas L-01…L-16).
 - **Migración:** `V18__fondos_pagina_carga.sql` (V15 contenido, V16 seguimiento y V17 Stripe están reservadas por otras ramas).
 - **Decisión de arquitectura:** §9 de este documento (propuesta de ADR-015; ADR-001 y ADR-005 para el almacenamiento).
@@ -11,7 +17,7 @@
 - **Fondos iniciales** (L-08): `fondo3` y `fondo4`; activo por defecto `fondo4`. Sus imágenes van empaquetadas en el backend (no en la base de datos) y **no se pueden borrar**.
 - **Galería**: solo ADMIN y TRAINER (L-04). COLLABORATOR y CLIENT reciben 403.
 - **Borrado** (L-05): no se borran ni el activo ni los iniciales; el TRAINER solo borra los que subió; el ADMIN, cualquiera.
-- **Subida**: JPG, PNG o WebP; lado largo ≥ 1920 px y lado corto ≥ 1080 px (se acepta vertical, L-13); ≤ 10 MB (10 × 1024 × 1024 bytes); ≤ 40 megapíxeles y ≤ 16 384 px por lado. Recomendado 3840 × 2160.
+- **Subida**: JPG, PNG o WebP; lado largo ≥ 1920 px y lado corto ≥ 1080 px (se acepta vertical, L-13); ≤ 10 MB (10 × 1024 × 1024 bytes); ≤ 40 megapíxeles y ≤ 16 384 px por lado (**JPEG progresivo: ≤ 12 megapíxeles**). Solo JPEG secuencial o progresivo con Huffman (`SOF0`, `SOF1`, `SOF2`) y ≤ 64 barridos. Recomendado 3840 × 2160.
 - Los fondos subidos cuentan en la cuota de almacenamiento de quien los sube (ADR-001/ADR-005).
 
 ## Modelos
@@ -21,7 +27,7 @@
 { "name": "w1920", "width": 1920, "height": 1168, "contentType": "image/jpeg", "url": "/public/backgrounds/2/w1920" }
 ```
 - `name`: `original`, `w768`, `w1280`, `w1920`, `p1080` o `thumb`.
-- `url`: pública (sin parámetros) si el fondo es el activo o uno inicial; **firmada** (`?exp=…&sig=…`, caduca en 1 hora) si es un fondo subido que no es el activo. No se debe guardar: se pide de nuevo la galería.
+- `url`: pública (sin parámetros) si el fondo es el activo o uno inicial (en el `original`, solo si además no tiene variantes, es decir, WebP); **firmada** (`?exp=…&sig=…`, caduca en 1 hora) si es un fondo subido que no es el activo. No se debe guardar: se pide de nuevo la galería.
 
 ### Variantes (L-11: las genera el servidor al subir; los iniciales, al arrancar)
 | `name` | Medida | Uso |
@@ -69,10 +75,12 @@
 {
   "id": 2, "name": "Fondo 4", "builtin": true, "contentType": "image/jpeg", "width": 5440, "height": 3310,
   "objectPosition": "50% 35%", "lqip": "data:image/jpeg;base64,…",
-  "original": { "name": "original", "width": 5440, "height": 3310, "contentType": "image/jpeg", "url": "/public/backgrounds/2/original" },
+  "original": null,
   "variants": [ /* BackgroundImageDto, URL públicas */ ]
 }
 ```
+- `name`: el de los iniciales (`"Fondo 3"`, `"Fondo 4"`); en los subidos, siempre `"Fondo personalizado"` (no se publica el nombre del archivo, B-3 de T211).
+- `original`: **`null` si hay variantes** (2.0.0). Solo un WebP subido (sin variantes) trae `original` con su URL pública. El original no se publica para no servir sin necesidad el archivo pesado (M-3 de T211).
 
 ### Errores de fondos: `BackgroundErrorResponse`
 ```json
@@ -92,8 +100,8 @@
 | `BACKGROUND_FORMAT` | 400 | Extensión distinta de `.jpg/.jpeg/.png/.webp` o `Content-Type` declarado que no es de imagen admitida |
 | `BACKGROUND_TOO_LARGE` | 413 | Más de 10 MB. Si además falla el formato, `reasons` trae los dos (el de tamaño primero). Si el archivo supera el límite del servidor antes de llegar al servicio, solo trae este motivo y `sizeBytes` es `null` |
 | `BACKGROUND_SIGNATURE` | 400 | El contenido no es JPEG/PNG/WebP o no coincide con la extensión (p. ej. un PNG llamado `.jpg`) |
-| `BACKGROUND_UNREADABLE` | 400 | Archivo vacío, cabecera dañada o truncada, o el decodificador no puede leerlo |
-| `BACKGROUND_TOO_MANY_PIXELS` | 400 | Más de 40 MP o algún lado > 16 384 px (se rechaza leyendo solo la cabecera) |
+| `BACKGROUND_UNREADABLE` | 400 | Archivo vacío, cabecera dañada o truncada, el decodificador no puede leerlo, JPEG aritmético/sin pérdida/jerárquico o con más de 64 barridos |
+| `BACKGROUND_TOO_MANY_PIXELS` | 400 | Más de 40 MP o algún lado > 16 384 px (se rechaza leyendo solo la cabecera); JPEG progresivo de más de 12 MP |
 | `BACKGROUND_TOO_SMALL` | 400 | Lado largo < 1920 o lado corto < 1080 |
 | `BACKGROUND_QUOTA` | 409 | Se supera la cuota de almacenamiento del usuario o el tope global |
 | `BACKGROUND_BUSY` | 503 | El servidor lleva 30 s procesando otra imagen: reintentar en unos segundos |
@@ -111,7 +119,7 @@ Los 401/403 por rol (sin token, COLLABORATOR, CLIENT) y los 400 de validación d
 
 ### `POST /api/backgrounds` — subir un fondo
 - `multipart/form-data` con la parte **`file`**. Una imagen por petición (L-06).
-- Comprobaciones, en orden: formato declarado (extensión y `Content-Type`) y tamaño → firma del contenido → cabecera (dimensiones sin decodificar) → límite de píxeles → mínimo 1920 × 1080 → decodificación y variantes.
+- Comprobaciones, en orden: formato declarado (extensión y `Content-Type`) y tamaño → firma del contenido → cabecera (dimensiones sin decodificar) → límite de píxeles → estructura completa y limpieza de metadatos (tipo de JPEG, 12 MP si es progresivo, barridos) → mínimo 1920 × 1080 → decodificación y variantes.
 - No se guarda nada si algo falla.
 - 201 → `BackgroundDto` (queda en la galería, **no activo**; el front lo deja seleccionado).
 - Errores: tabla anterior. La generación de variantes puede tardar unos segundos (estado "Procesando…" del diseño).
@@ -137,29 +145,38 @@ Los 401/403 por rol (sin token, COLLABORATOR, CLIENT) y los 400 de validación d
 
 ### `GET /api/public/backgrounds/active/{name}` — alias estable del fondo activo
 - `name`: `original`, `w768`, `w1280`, `w1920`, `p1080`, `thumb`. Otro nombre → 404.
-- Devuelve la imagen del activo con `Cache-Control: public, max-age=300`. Si el activo no tiene esa variante (WebP o variante más ancha que el original), devuelve el **original**.
+- Devuelve la imagen del activo con `Cache-Control: public, max-age=300` y `ETag: "bg-{id}-{imagen servida}"`.
+- Si el activo **no tiene variantes** (WebP), devuelve el original para cualquier `name`.
+- Si tiene variantes y falta la pedida (p. ej. `w1920` de una vertical de 1080 px de ancho) o se pide `original`, devuelve la **`w*` más ancha** que exista (siempre hay al menos `w768`). Nunca devuelve el original de un JPEG o PNG.
 - Pensado para `<link rel="preload" as="image" imagesrcset="…/active/w768 768w, …/active/w1280 1280w, …/active/w1920 1920w">` en `index.html` (diseño §5.2).
 
 ### `GET /api/public/backgrounds/{id}/{name}[?exp=&sig=]` — una imagen concreta
-- Sin firma: solo el fondo activo y los iniciales; un fondo subido que no es el activo → 404 (no se revela que existe).
+- Sin firma: solo el fondo activo y los iniciales, y de ellos solo las variantes (el `original` sin firma, solo si el fondo no tiene variantes: WebP); el resto → 404 (no se revela que existe).
 - Con firma (las URL de la galería): cualquier fondo; firma no válida o caducada → 403.
 - Variante inexistente → 404 (aquí no hay vuelta al original).
-- Cabeceras: `Cache-Control: public, max-age=86400` (sin firma) o `private, max-age=3600` (firmada); `ETag: "bg-{id}-{name}"` (304 con `If-None-Match`); `X-Content-Type-Options: nosniff`; `Content-Security-Policy: default-src 'none'; sandbox`; `Content-Disposition: inline`.
+- Cabeceras: `Cache-Control: public, max-age=86400` (sin firma, fondos iniciales), `public, max-age=300` (sin firma, fondo subido activo: deja de ser público al cambiar el fondo) o `private, max-age=3600` (firmada); `ETag: "bg-{id}-{name}"` (304 con `If-None-Match`); `X-Content-Type-Options: nosniff`; `Content-Security-Policy: default-src 'none'; sandbox`; `Content-Disposition: inline`.
 - Si el archivo está en R2 (ADR-005), responde **302** a una URL prefirmada de 1 hora (`Cache-Control` de 300 s en la redirección). `<img>` lo sigue sin hacer nada.
 
 ## Indicaciones para el front (T209)
 - Página `/entrada`: `GET /api/public/backgrounds/active` → pinta `lqip` (si no es `null`), y monta el `<picture>` con:
   - vertical (`orientation: portrait`, `max-width: 1023px`): `p1080` si existe;
-  - horizontal: `srcset` con las `w*` que vengan; `src` = `w1920` o, si no hay, `original`;
+  - horizontal: `srcset` con las `w*` que vengan; `src` = `w1920` o, si no hay, la `w*` más ancha; **`original` solo si `variants` está vacío** (WebP); en los demás casos es `null` (2.0.0);
   - `object-position: objectPosition`.
-- Galería: miniatura = `thumb` o, si no hay, `original`; aviso de vertical con `portrait`; "Eliminar" según `canDelete`; mensajes de rechazo con `reasons[].message`.
+- Si se reescriben las URL al alias `active/{name}`, no hay que hacerlo con `original` cuando es `null`; el alias ya resuelve las variantes que falten.
+- Galería: miniatura = `thumb` o, si no hay, `original` (en la galería `original` nunca es `null`; su URL va firmada salvo en un WebP activo); aviso de vertical con `portrait`; "Eliminar" según `canDelete`; mensajes de rechazo con `reasons[].message`.
 - Las URL firmadas caducan en 1 hora: al volver a la pantalla, recargar la galería.
 
 ## Seguridad
 - Firma de contenido obligatoria y coherente con la extensión; `Content-Type` de la respuesta según el formato real.
 - **Bombas de descompresión:** las dimensiones se leen de la cabecera (PNG `IHDR`, JPEG `SOF`, WebP `VP8 `/`VP8L`/`VP8X`) **sin decodificar los píxeles**; si superan 40 MP o 16 384 px por lado se rechaza antes de decodificar. Al decodificar, se comprueba que el decodificador ve las mismas dimensiones que la cabecera, se submuestrea a ≤ 3840 × 2160 (≈ 33 MB en memoria), cualquier aviso del decodificador se trata como imagen dañada, y solo se procesa **una imagen a la vez** en todo el servidor. ImageIO trabaja sin caché en disco.
 - El WebP no se decodifica (Java no trae decodificador): solo se valida su cabecera y el tamaño del contenedor RIFF, y se sirve tal cual con `nosniff`.
-- Las variantes se recodifican (no conservan EXIF ni metadatos). **El original se guarda tal cual** (con sus metadatos EXIF, incluida la posible ubicación GPS): ver riesgos en §9.
+- Las variantes se recodifican (no conservan EXIF ni metadatos).
+- **El original se guarda sin metadatos** (T215, M-1 de T211), quitando segmentos y fragmentos sin recodificar los píxeles:
+  - JPEG: se quitan `APP1`–`APP15` (EXIF, XMP, IPTC/Photoshop, MPF…), `COM`, los marcadores reservados `JPGn` y todo lo que va tras `EOI` (imágenes añadidas). Se conservan `APP2 ICC_PROFILE` (color), `APP14 Adobe` (transformación de color) y `APP0 JFIF` solo si no lleva miniatura. **Orientación:** si el EXIF traía una orientación distinta de 1, se escribe un `APP1` Exif mínimo con **solo** esa etiqueta, para que el original se siga viendo igual que las variantes.
+  - PNG: se conservan los fragmentos críticos y `tRNS`, `cHRM`, `gAMA`, `iCCP`, `sBIT`, `sRGB`, `cICP`, `mDCV`, `cLLI`, `bKGD`, `pHYs`; se quitan `tEXt`, `zTXt`, `iTXt`, `eXIf`, `tIME`, cualquier otro auxiliar y lo que va tras `IEND`. Un PNG con orientación en `eXIf` se ve sin girar (como sus variantes, que ya la ignoraban).
+  - WebP: se conservan `VP8X`, `ICCP`, `ANIM`, `ANMF`, `ALPH`, `VP8 `, `VP8L`; se quitan `EXIF`, `XMP ` y los desconocidos, se apagan los indicadores EXIF y XMP de `VP8X` y se recalcula el tamaño RIFF.
+  - `sizeBytes` es el tamaño del original ya limpio (es lo que cuenta en la cuota).
+- **JPEG progresivos y exóticos** (M-2 de T211): se recorre toda la estructura antes de decodificar. `SOF2` (progresivo) de más de 12 MP → `BACKGROUND_TOO_MANY_PIXELS` (el decodificador de Java guarda los coeficientes a resolución completa aunque se submuestree). `SOF3`, `SOF5`–`SOF7`, `SOF9`–`SOF15` (sin pérdida, jerárquico, aritmético; ImageIO no los decodifica) → `BACKGROUND_UNREADABLE` con mensaje propio. Más de 64 barridos (`SOS`), varios `SOF`, falta de `EOI` o segmentos fuera de sitio → `BACKGROUND_UNREADABLE`.
 - La URL firmada usa HMAC-SHA256 con una clave derivada de `app.jwt.secret`; incluye id, nombre de la imagen y caducidad.
 - El endpoint público no devuelve datos personales (ni quién subió ni quién cambió el fondo).
 
@@ -175,7 +192,7 @@ Los 401/403 por rol (sin token, COLLABORATOR, CLIENT) y los 400 de validación d
 **Alternativas descartadas:** generar las variantes en el navegador (L-11 lo descarta); servicio externo de imágenes (Cloudflare Images: coste y otra cuenta); librería nativa (imagen Docker y superficie de ataque mayores).
 
 **Riesgos:**
-- Memoria: una decodificación a la vez y submuestreo a 4K. Un JPEG **progresivo** grande (hasta 40 MP) puede necesitar algo más de memoria en el decodificador; lo revisa Seguridad (T211).
-- El original conserva EXIF (posible GPS). Propuesta: limpiar metadatos al subir o servir al público solo variantes (pendiente de decidir).
+- Memoria: una decodificación a la vez y submuestreo a 4K. Los JPEG **progresivos** se limitan a 12 MP (T215).
+- ~~El original conserva EXIF (posible GPS).~~ Resuelto en 2.0.0 (T215): se limpian los metadatos al subir **y** el original de un JPEG/PNG no se publica sin firma. Los WebP siguen sin recodificarse (B-4 de T211).
 - Sin AVIF/WebP, la `w1920` pesa más que el objetivo del diseño (≤ 250 KB en AVIF).
 - Coste: cada subida guarda el original y hasta 5 JPEG (≈ +20 % del original).
