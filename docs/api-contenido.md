@@ -1,6 +1,6 @@
 # API · Generador de contenido (Marketing)
 
-Versión 1.0.0 · 2026-10-30 · Tarea T187 (implementa T190; permiso del colaborador T198) · Decisión: `docs/adr/ADR-014-conectores-sociales.md` (raíz del proyecto) · Especificación: `docs/fase8-generador-contenido.md` (raíz) · Migración: `V15` (T189, borrador en §10)
+Versión 1.1.0 · 2026-11-01 · Tarea T187, ampliado en T190 (implementa T190; permiso del colaborador T198) · Decisión: `docs/adr/ADR-014-conectores-sociales.md` (raíz del proyecto) · Especificación: `docs/fase8-generador-contenido.md` (raíz) · Migración: `V15` (T189, borrador en §10)
 
 ## 0. Reglas comunes
 - Todas las rutas exigen JWT y cuelgan de `/api/content`. Swagger: grupo "Contenido".
@@ -35,13 +35,14 @@ Versión 1.0.0 · 2026-10-30 · Tarea T187 (implementa T190; permiso del colabor
 ### `GET /api/content/catalog`
 Etiquetas en español para la interfaz (sin datos del usuario):
 ```json
-{ "networks": [{ "id": "INSTAGRAM", "label": "Instagram" }],
+{ "networks": [{ "id": "INSTAGRAM", "label": "Instagram", "charLimit": null }],
   "formats": [{ "id": "REEL", "label": "Reel" }],
   "objectives": [{ "id": "ATTRACT_CLIENTS", "label": "Captar clientes" }],
   "themes": ["Fuerza", "Nutrición", "Pérdida de grasa", "Movilidad"],
   "timeZones": ["Europe/Madrid"] }
 ```
 `themes`: los temas del banco del sistema (sugerencias; el tema es texto libre ≤ 60).
+`networks[].charLimit` (v1.1.0, D-02): límite de caracteres del texto en esa red; **`null` mientras no se verifique contra la documentación oficial (T194)**.
 
 ## 1. Cuentas sociales
 
@@ -170,6 +171,7 @@ ContentPostDto {
   scheduledLocal?,         // "2026-11-03T11:00" en timeZone
   timeZone,                // "Europe/Madrid"
   targets: [ PostTargetDto ],
+  hasMetrics,              // v1.1.0 (D-03): true si alguna red tiene al menos una medición (SYNC o MANUAL)
   createdBy: { id, fullName }, updatedBy: { id, fullName }, createdAt, updatedAt, version
 }
 PostTargetDto { network, status (TargetStatus), automatic (se publicará por API), accountStatus,
@@ -182,7 +184,7 @@ PostTargetDto { network, status (TargetStatus), automatic (se publicará por API
 | GET | `/api/content/posts` | `status`, `network`, `format`, `from`, `to` (fechas locales), `q`; paginado, orden `scheduledAt,asc` | `Page<ContentPostDto>` |
 | GET | `/api/content/posts/{id}` | — | `ContentPostDto` |
 | POST | `/api/content/posts` | `PostRequest` | 201 `ContentPostDto` en `DRAFT` |
-| PUT | `/api/content/posts/{id}` | `PostRequest` + `version` | `ContentPostDto`. 409 si está `PUBLISHED` o `CANCELLED`, o si `version` no coincide (otro la editó) |
+| PUT | `/api/content/posts/{id}` | `PostRequest` + `version` | `ContentPostDto`. 400 si falta `version`. 409 si está `PUBLISHED` o `CANCELLED`, o si `version` no coincide (otro la editó) |
 | DELETE | `/api/content/posts/{id}` | — | 204. Solo `DRAFT` o `CANCELLED` (409 si no) |
 | POST | `/api/content/posts/{id}/schedule` | `ScheduleRequest` | `ContentPostDto` en `SCHEDULED` |
 | PATCH | `/api/content/posts/{id}/schedule` | `ScheduleRequest` (mover en el calendario) | `ContentPostDto`. Solo `SCHEDULED`, `DRAFT` o `FAILED` |
@@ -196,7 +198,8 @@ PostTargetDto { network, status (TargetStatus), automatic (se publicará por API
 - `mediaFileId`: archivo propio de la Librería (`/api/files`); de otro → 404. No se aceptan los dos a la vez.
 - Cambiar `networks` en `SCHEDULED` añade o quita destinos `PENDING`.
 
-`ScheduleRequest { date: "2026-11-03", time: "11:00", timeZone: "Europe/Madrid", networks[]? }`
+`ScheduleRequest { date: "2026-11-03", time: "11:00", timeZone: "Europe/Madrid", networks[]?, version? }`
+- `version` (v1.1.0, D-05; opcional): la versión que vio el cliente (p. ej. al arrastrar en el calendario). Si se envía y no coincide → 409; si no se envía, gana la última petición.
 - Programar exige título, ≥ 1 red y una hora **al menos 1 minuto en el futuro** (400 si no).
 - Hora que no existe por el cambio de hora (último domingo de marzo, 02:00–02:59) → 400; hora repetida (último domingo de octubre) → se toma la primera.
 - Otra zona distinta de `Europe/Madrid` → 400 en v1.
@@ -217,7 +220,8 @@ PostTargetDto { network, status (TargetStatus), automatic (se publicará por API
 CalendarDto { view, from, to, timeZone,
   days: [ { date, posts: [ CalendarPostDto ] } ] }
 CalendarPostDto { id, title, format, status, time ("11:00"), networks[], targets: [{ network, status }],
-                  thumbnailUrl? }   // miniatura si el medio es una imagen o tiene portada; si no, null
+                  thumbnailUrl?,    // miniatura si el medio es una imagen o tiene portada; si no, null
+                  version }         // v1.1.0 (D-05): para enviarla en PATCH …/schedule al arrastrar
 ```
 - Mover en el calendario = `PATCH /api/content/posts/{id}/schedule`.
 - Vista lista (móvil): `GET /api/content/posts?from&to`.
@@ -230,9 +234,13 @@ ContentHomeDto {
   ideas: ContentIdeaDto[]   // hasta 5 propias no usadas, favoritas primero; si no hay, del banco
   hooks: ContentSnippetDto[] // hasta 5 ganchos propios favoritos; si no hay, del banco
   kpis: { scheduled, published, onTimeRate?, views?, viewsSource? }   // de esa semana
-  accounts: [ { network, status } ]
+  accounts: [ { network, status } ],
+  manualDue                  // v1.1.0 (D-06): publicaciones con alguna red en MANUAL_DUE ("toca publicar")
 }
 ```
+### `GET /api/content/posts/manual-due/count` (v1.1.0, D-06)
+`{ "count": 3 }`: publicaciones del espacio con alguna red en `MANUAL_DUE` (badge de la barra lateral). Como Inicio y calendario, antes procesa las publicaciones vencidas (como mucho cada 30 s).
+
 No hay "ideas populares" calculadas con datos ajenos: el frontend las titula como ideas propias o del banco (nota para Diseño, T188).
 
 ## 8. Analíticas
@@ -264,7 +272,7 @@ KpiDto { value?, previous?, changePct?, source? (SYNC|MANUAL|MIXED) }
 - Para cada publicación y red se usa su **última medición** dentro del periodo (si el mismo día hay `SYNC` y `MANUAL`, gana `SYNC`). Interacciones = likes + comentarios + compartidos + guardados (los nulos no suman; si todos son nulos, `null`).
 
 ### Métricas de una publicación
-`PostMetricDto { id, network, measuredOn, views?, reach?, likes?, comments?, shares?, saves?, source, createdBy?, createdAt }`
+`PostMetricDto { id, network, measuredOn, views?, reach?, likes?, comments?, shares?, saves?, source, createdBy?, createdAt }` — `createdBy`: id del usuario que la apuntó (solo `MANUAL`).
 
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
@@ -366,3 +374,4 @@ Notas para Base de Datos:
 
 ## Historial
 - 1.0.0 (2026-10-30, T187): primera versión.
+- 1.1.0 (2026-11-01, T190): campos aditivos para los huecos de `docs/diseno-fase8.md` §13 — `catalog.networks[].charLimit` (D-02, `null` hasta T194), `ContentPostDto.hasMetrics` (D-03), `CalendarPostDto.version` y `ScheduleRequest.version` opcional (D-05), `ContentHomeDto.manualDue` y `GET /posts/manual-due/count` (D-06). `PUT /posts/{id}` sin `version` → 400. `GET /api/notifications/unread-count` también procesa las publicaciones vencidas (ADR-014 §6). Sin cambios incompatibles.
