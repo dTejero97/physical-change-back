@@ -2,6 +2,7 @@ package com.physicalchange.config;
 
 import com.physicalchange.security.JwtAuthFilter;
 import com.physicalchange.security.RateLimitFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authorization.AuthorizationDecision;
@@ -30,6 +31,9 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
             .authorizeHttpRequests(a -> a
+                // El reenvío interno a /error no lleva el JWT: sin esto, un 403 llegaba al cliente como 401 y el front
+                // cerraba la sesión (QA T202/T210).
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/auth/login", "/api/public/**", "/actuator/health", "/actuator/info",
                                  "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
