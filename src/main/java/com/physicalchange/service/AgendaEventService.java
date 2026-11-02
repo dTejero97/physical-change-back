@@ -347,7 +347,7 @@ public class AgendaEventService {
     private void assertClientCanBook(AuthUser me, AgendaEvent e, Long clientId) {
         if (!me.id().equals(clientId)) throw new ForbiddenException("Solo puedes reservar para ti");
         AppUser c = users.findById(me.id()).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
-        if (!directory.isClientOf(c, e.getTrainerId())) throw new ForbiddenException("Sesión de otro profesional");
+        if (!directory.canBookWith(c, e.getTrainerId())) throw new ForbiddenException("Sesión de otro profesional");
         if ("NO".equals(e.getBookable())) throw new ForbiddenException("Esta sesión no admite reservas");
         if ("TAGS".equals(e.getBookable())) {
             Set<Long> mine = profiles.findById(me.id()).map(ClientProfile::getTagIds).orElse(Set.of());

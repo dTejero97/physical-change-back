@@ -2,10 +2,13 @@ package com.physicalchange.service;
 
 import com.physicalchange.domain.ClientDailyLog;
 import com.physicalchange.domain.ProgressEntry;
+import com.physicalchange.domain.Role;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.BadRequestException;
 import com.physicalchange.exception.ConflictException;
+import com.physicalchange.exception.NotFoundException;
 import com.physicalchange.repository.ClientDailyLogRepository;
+import com.physicalchange.repository.UserRepository;
 import com.physicalchange.security.AccessService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -29,9 +32,10 @@ public class DailyLogService {
     private final ProgressService progress;
     private final AccessService access;
     private final Clock clock;
+    private final UserRepository users;
 
-    public DailyLogService(ClientDailyLogRepository l, ProgressService p, AccessService a, Clock c) {
-        logs = l; progress = p; access = a; clock = c;
+    public DailyLogService(ClientDailyLogRepository l, ProgressService p, AccessService a, Clock c, UserRepository u) {
+        logs = l; progress = p; access = a; clock = c; users = u;
     }
 
     // ---------- cliente (siempre el del token) ----------
@@ -71,14 +75,20 @@ public class DailyLogService {
 
     @Transactional(readOnly = true)
     public DailyLogDto forClient(Long clientId, LocalDate date) {
-        access.assertCanAccessClient(clientId);
+        assertProfessionalCanRead(clientId);
         return day(clientId, date);
     }
 
     @Transactional(readOnly = true)
     public DailyLogMonthDto monthForClient(Long clientId, String month) {
-        access.assertCanAccessClient(clientId);
+        assertProfessionalCanRead(clientId);
         return month(clientId, month);
+    }
+
+    /** Permiso del peso, más 404 si no es un cliente: assertCanAccessClient deja pasar al ADMIN sin buscarlo (QA T214). */
+    private void assertProfessionalCanRead(Long clientId) {
+        access.assertCanAccessClient(clientId);
+        users.findById(clientId).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
     }
 
     // ---------- internos ----------
