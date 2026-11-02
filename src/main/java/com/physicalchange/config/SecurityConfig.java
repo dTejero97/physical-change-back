@@ -42,6 +42,10 @@ public class SecurityConfig {
                     .hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 .requestMatchers("/api/workouts/**").hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 .requestMatchers("/api/clients/**", "/api/reports/**", "/api/library/**", "/api/files/**").hasAnyRole("ADMIN", "TRAINER")
+                // Fondos de la página de carga (T208, docs/api-fondos.md): galería solo ADMIN y TRAINER (L-04: ni colaborador ni cliente).
+                // La lectura pública vive en /api/public/backgrounds/** (ya incluida en /api/public/**: el fondo activo y los iniciales,
+                // o con URL firmada).
+                .requestMatchers("/api/backgrounds", "/api/backgrounds/**").hasAnyRole("ADMIN", "TRAINER")
                 .requestMatchers("/api/auth/**", "/api/team/me", "/api/exercises", "/api/exercises/**").authenticated()
                 .requestMatchers(HttpMethod.GET, "/api/exercise-logs/client/**", "/api/progress/client/**", "/api/progress/strength/**",
                                  "/api/assignments/*/compliance").authenticated()

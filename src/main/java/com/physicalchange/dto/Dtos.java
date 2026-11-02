@@ -534,4 +534,24 @@ public final class Dtos {
                                 LocalDateTime updatedAt) {}
     /** El profesional pide al cliente que revise su cuestionario; la nota es opcional. */
     public record OnboardingUpdateRequest(@Size(max = 300) String note) {}
+
+    // ---- Fondos de la página de carga (docs/api-fondos.md, T208, ADR-015) ----
+    /** Una imagen servible: el original o una variante. url relativa a la base de la API. */
+    public record BackgroundImageDto(String name, int width, int height, String contentType, String url) {}
+    public record BackgroundPersonDto(Long id, String fullName) {}
+    /** Fondo de la galería (solo ADMIN y TRAINER). */
+    public record BackgroundDto(Long id, String name, boolean builtin, boolean active, String contentType, int width, int height,
+                                long sizeBytes, boolean portrait, String objectPosition, String lqip,
+                                BackgroundImageDto original, List<BackgroundImageDto> variants,
+                                BackgroundPersonDto uploadedBy, LocalDateTime uploadedAt, boolean canDelete) {}
+    public record BackgroundActiveInfoDto(Long backgroundId, BackgroundPersonDto changedBy, LocalDateTime changedAt) {}
+    public record BackgroundGalleryDto(BackgroundActiveInfoDto active, List<BackgroundDto> items) {}
+    /** Fondo activo para la página de carga pública: sin datos personales. */
+    public record PublicBackgroundDto(Long id, String name, boolean builtin, String contentType, int width, int height,
+                                      String objectPosition, String lqip, BackgroundImageDto original, List<BackgroundImageDto> variants) {}
+    public record SetActiveBackgroundRequest(@NotNull Long backgroundId) {}
+    /** Error de fondos: ErrorResponse + código estable y todos los motivos de rechazo. */
+    public record BackgroundErrorResponse(Instant timestamp, int status, String error, String message, String code,
+                                          List<com.physicalchange.exception.BackgroundException.Reason> reasons,
+                                          Integer width, Integer height, Long sizeBytes) {}
 }
