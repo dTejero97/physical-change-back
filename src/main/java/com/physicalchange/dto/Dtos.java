@@ -160,6 +160,24 @@ public final class Dtos {
     public record ProgressDto(Long id, Long clientId, LocalDate entryDate, BigDecimal weightKg,
                               BigDecimal bodyFatPct, String notes) {}
 
+    // ---- Seguimiento diario del cliente (T201, docs/api-cliente-seguimiento.md) ----
+    /** weightKg null = no se toca el peso del día; sleepMinutes / mood null = se vacían; restDay null = false. */
+    public record DailyLogRequest(@DecimalMin("20.0") @DecimalMax("500.0") BigDecimal weightKg,
+                                  @Min(0) @Max(1440) Integer sleepMinutes, @Min(1) @Max(5) Integer mood, Boolean restDay) {}
+    /** logged: el día tiene peso, sueño, ánimo o descanso. updatedAt: último guardado del diario (null si solo hay peso). */
+    public record DailyLogDto(LocalDate date, BigDecimal weightKg, Integer sleepMinutes, Integer mood, boolean restDay,
+                              boolean logged, LocalDateTime updatedAt) {}
+    /** Todos los días del mes (también vacíos y futuros). today: hoy en la zona de la plataforma (ADR-008). */
+    public record DailyLogMonthDto(String month, LocalDate today, List<DailyLogDto> days) {}
+    /**
+     * Sesión que el cliente puede reservar. capacity/seatsLeft null = sin límite; full = reservar deja en cola.
+     * myBookingStatus: BOOKED | WAITLIST | null. meetingUrl solo si tiene plaza.
+     */
+    public record AvailableSessionDto(Long id, String title, String emoji, String description, String mode, String location,
+                                      String meetingUrl, String sessionTypeName, String color, String cover, String coverUrl,
+                                      LocalDateTime start, LocalDateTime end, Integer capacity, long booked, Integer seatsLeft,
+                                      boolean full, Long myBookingId, String myBookingStatus, String organizerName) {}
+
     // ---- Citas y calendario ----
     public record AppointmentRequest(@NotNull Long clientId, @NotNull @Future LocalDateTime startAt,
                                      @NotNull @Future LocalDateTime endAt, @Size(max = 200) String title) {}

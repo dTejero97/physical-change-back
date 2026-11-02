@@ -259,19 +259,21 @@ class OnboardingTest {
         send("GET", url, trainer, null, 200);
     }
 
-    @Test void elPesoDelCuestionarioNoPisaOtroRegistroDelDia() throws Exception {
+    /**
+     * Desde V16 hay un solo peso por día (T201, contrato D2): el del cuestionario actualiza el registro de hoy, sin duplicarlo
+     * y sin cambiar la nota que ya tenía (sustituye a la regla de T196/B6, que creaba un registro propio).
+     */
+    @Test void elPesoDelCuestionarioActualizaElDiaSinPisarSuNota() throws Exception {
         ProgressEntry mine = new ProgressEntry();
         mine.setClientId(clientId); mine.setEntryDate(LocalDate.now()); mine.setWeightKg(new BigDecimal("80.0")); mine.setNotes("Después de entrenar");
         mine = progress.save(mine);
         put("{\"weightKg\":78.5}", 200);
         put("{\"weightKg\":78.0}", 200);
         List<ProgressEntry> entries = progress.findByClientIdOrderByEntryDateAsc(clientId);
-        assertEquals(2, entries.size());
-        ProgressEntry other = progress.findById(mine.getId()).orElseThrow();
-        assertEquals(0, new BigDecimal("80.0").compareTo(other.getWeightKg()));
-        assertEquals("Después de entrenar", other.getNotes());
-        ProgressEntry initial = entries.stream().filter(e -> "Cuestionario inicial".equals(e.getNotes())).findFirst().orElseThrow();
-        assertEquals(0, new BigDecimal("78.0").compareTo(initial.getWeightKg()));
+        assertEquals(1, entries.size());
+        ProgressEntry day = progress.findById(mine.getId()).orElseThrow();
+        assertEquals(0, new BigDecimal("78.0").compareTo(day.getWeightKg()));
+        assertEquals("Después de entrenar", day.getNotes());
     }
 
     @Test void elClientIdDelCuerpoSeIgnora() throws Exception {

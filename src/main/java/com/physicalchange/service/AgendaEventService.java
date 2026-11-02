@@ -35,12 +35,14 @@ public class AgendaEventService {
     private final AccessService access;
     private final BonusService bonusService;
     private final ApplicationEventPublisher publisher;
+    /** Zona de la plataforma (ADR-008): "ya ha empezado" no depende de la zona del servidor. */
+    private final Clock clock;
 
     public AgendaEventService(AgendaEventRepository e, AgendaBookingRepository b, SessionTypeService t, AgendaActivityService a,
                               FileService f, TagRefs tr, UserRepository u, ClientProfileRepository p, ClientDirectory d, AccessService ac,
-                              BonusService bs, ApplicationEventPublisher pub) {
+                              BonusService bs, ApplicationEventPublisher pub, Clock clk) {
         events = e; bookings = b; types = t; activity = a; files = f; tags = tr; users = u; profiles = p; directory = d; access = ac;
-        bonusService = bs; publisher = pub;
+        bonusService = bs; publisher = pub; clock = clk;
     }
 
     /** Filtros opcionales de la lista y de los KPIs (vacío o nulo = sin filtrar). */
@@ -106,6 +108,54 @@ public class AgendaEventService {
     @Transactional(readOnly = true)
     public List<AgendaEvent> bookedByClient(Long clientId, LocalDate from, LocalDate to) {
         return events.findBookedByClient(clientId, List.of("BOOKED", "ATTENDED"), DateTimes.startOfDay(from), DateTimes.endExclusive(to));
+    }
+
+    /** Máximo de días de la lista de reservables del cliente. */
+    static final int MAX_AVAILABLE_DAYS = 92;
+
+    /**
+     * Sesiones que el cliente del token puede reservar (T201, D17): de su entrenador, reservables para él (YES, o TAGS con alguna
+     * de sus etiquetas), que aún no han empezado y empiezan en [from, to]. Las mismas reglas que comprueba book().
+     */
+    @Transactional(readOnly = true)
+    public List<AvailableSessionDto> availableForClient(LocalDate from, LocalDate to) {
+        if (to.isBefore(from) || from.plusDays(MAX_AVAILABLE_DAYS).isBefore(to)) throw new BadRequestException("Rango de fechas no válido");
+        Long me = access.current().id();
+        AppUser c = users.findById(me).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+        // Su entrenador; sin trainerId, el ADMIN hace de profesional (como en ClientDirectory).
+        List<Long> owners = c.getTrainerId() != null ? List.of(c.getTrainerId())
+                : users.findByRole(Role.ADMIN).stream().map(AppUser::getId).toList();
+        Set<Long> myTags = profiles.findById(me).map(ClientProfile::getTagIds).orElse(Set.of());
+        LocalDateTime now = LocalDateTime.now(clock);
+        List<AgendaEvent> list = owners.stream()
+                .flatMap(o -> events.findByTrainerIdAndStartAtGreaterThanEqualAndStartAtLessThanOrderByStartAtAsc(
+                        o, DateTimes.startOfDay(from), DateTimes.endExclusive(to)).stream())
+                .sorted(Comparator.comparing(AgendaEvent::getStartAt).thenComparing(AgendaEvent::getId))
+                .filter(e -> "SESSION".equals(e.getKind()))
+                .filter(e -> "YES".equals(e.getBookable()) || ("TAGS".equals(e.getBookable()) && !Collections.disjoint(myTags, e.getTagIds())))
+                .filter(e -> e.getStartAt().isAfter(now))
+                .toList();
+        if (list.isEmpty()) return List.of();
+
+        Map<Long, SessionType> typeById = types.byIds(list.stream().map(AgendaEvent::getSessionTypeId).filter(Objects::nonNull).collect(Collectors.toSet()));
+        Map<Long, Long> occupied = new HashMap<>();
+        Map<Long, AgendaBooking> mine = new HashMap<>();
+        for (AgendaBooking b : bookings.findByEventIdIn(list.stream().map(AgendaEvent::getId).toList())) {
+            if (OCCUPY.contains(b.getStatus())) occupied.merge(b.getEventId(), 1L, Long::sum);
+            if (me.equals(b.getClientId()) && ("BOOKED".equals(b.getStatus()) || "WAITLIST".equals(b.getStatus()))) mine.put(b.getEventId(), b);
+        }
+        Map<Long, String> names = new HashMap<>();
+        return list.stream().map(e -> {
+            SessionType t = e.getSessionTypeId() == null ? null : typeById.get(e.getSessionTypeId());
+            long booked = occupied.getOrDefault(e.getId(), 0L);
+            Integer left = e.getCapacity() == null ? null : (int) Math.max(0, e.getCapacity() - booked);
+            AgendaBooking b = mine.get(e.getId());
+            boolean seated = b != null && "BOOKED".equals(b.getStatus());
+            return new AvailableSessionDto(e.getId(), e.getTitle(), e.getEmoji(), e.getDescription(), e.getMode(), e.getLocation(),
+                    seated ? e.getMeetingUrl() : null, t == null ? null : t.getName(), t == null ? null : t.getColor(),
+                    e.getCover(), files.coverUrl(e.getCover()), e.getStartAt(), e.getEndAt(), e.getCapacity(), booked, left,
+                    left != null && left == 0, b == null ? null : b.getId(), b == null ? null : b.getStatus(), nameOf(names, e.getTrainerId()));
+        }).toList();
     }
 
     // ---------- alta, edición y borrado ----------
@@ -297,13 +347,13 @@ public class AgendaEventService {
     private void assertClientCanBook(AuthUser me, AgendaEvent e, Long clientId) {
         if (!me.id().equals(clientId)) throw new ForbiddenException("Solo puedes reservar para ti");
         AppUser c = users.findById(me.id()).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
-        if (!directory.isClientOf(c, e.getTrainerId())) throw new ForbiddenException("Sesión de otro profesional");
+        if (!directory.canBookWith(c, e.getTrainerId())) throw new ForbiddenException("Sesión de otro profesional");
         if ("NO".equals(e.getBookable())) throw new ForbiddenException("Esta sesión no admite reservas");
         if ("TAGS".equals(e.getBookable())) {
             Set<Long> mine = profiles.findById(me.id()).map(ClientProfile::getTagIds).orElse(Set.of());
             if (Collections.disjoint(mine, e.getTagIds())) throw new ForbiddenException("Esta sesión no está disponible para ti");
         }
-        if (e.getStartAt().isBefore(LocalDateTime.now())) throw new BadRequestException("La sesión ya ha empezado");
+        if (e.getStartAt().isBefore(LocalDateTime.now(clock))) throw new BadRequestException("La sesión ya ha empezado");
     }
 
     /** Al borrar una sesión futura (o dejar de ser sesión), sus reservas devuelven las sesiones de bono. */

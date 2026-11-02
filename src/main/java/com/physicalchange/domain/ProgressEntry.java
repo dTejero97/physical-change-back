@@ -4,8 +4,10 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+/** Peso y grasa corporal de un día. Único por (cliente, día) desde V16 (T201, D2). */
 @Entity
-@Table(name = "PROGRESS_ENTRY")
+@Table(name = "PROGRESS_ENTRY",
+       uniqueConstraints = @UniqueConstraint(name = "UQ_PROGRESS_ENTRY_CLIENT_DATE", columnNames = {"CLIENT_ID", "ENTRY_DATE"}))
 public class ProgressEntry {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
