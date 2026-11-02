@@ -155,6 +155,141 @@ public final class BackgroundImages {
         return new Header(Format.WEBP, w, h, 1);
     }
 
+    // ---------- Limpieza del original (T215, M-1 y M-2 de T211) ----------
+
+    /** Original sin metadatos. sof: marcador SOF del JPEG (0 en PNG y WebP); scans: número de SOS del JPEG. */
+    public record Cleaned(byte[] data, int sof, int scans) {}
+
+    public static final int SOF_BASELINE = 0xC0, SOF_EXTENDED = 0xC1, SOF_PROGRESSIVE = 0xC2;
+
+    /** Fragmentos PNG auxiliares que se conservan (color y transparencia); el resto de auxiliares se quita. */
+    static final Set<String> PNG_KEEP = Set.of("tRNS", "cHRM", "gAMA", "iCCP", "sBIT", "sRGB", "cICP", "mDCV", "cLLI", "bKGD", "pHYs");
+    /** Fragmentos WebP que se conservan (imagen, alfa, animación y perfil de color). */
+    static final Set<String> WEBP_KEEP = Set.of("VP8X", "ICCP", "ANIM", "ANMF", "ALPH", "VP8 ", "VP8L");
+
+    /**
+     * Quita los metadatos del original sin recodificar los píxeles y recorre toda su estructura (sin decodificar).
+     * JPEG: fuera APP1-APP15 (salvo ICC_PROFILE y Adobe), COM, JPGn y lo que va tras EOI; APP0 solo si es JFIF sin miniatura;
+     * la orientación EXIF (si no es 1) se reescribe en un APP1 mínimo con solo esa etiqueta.
+     * PNG: fuera los auxiliares que no están en PNG_KEEP (tEXt, zTXt, iTXt, eXIf, tIME…) y lo que va tras IEND.
+     * WebP: fuera EXIF, XMP y desconocidos; indicadores de VP8X corregidos y tamaño RIFF recalculado.
+     */
+    public static Cleaned clean(byte[] b, Header h) throws UnreadableException {
+        return switch (h.format()) {
+            case JPEG -> cleanJpeg(b, h.orientation());
+            case PNG -> cleanPng(b);
+            case WEBP -> cleanWebp(b);
+        };
+    }
+
+    private static Cleaned cleanJpeg(byte[] b, int orientation) throws UnreadableException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(b.length);
+        out.write(0xFF); out.write(0xD8);
+        boolean orientationWritten = orientation == 1;
+        int i = 2, sof = 0, scans = 0;
+        while (true) {
+            if (i + 2 > b.length) throw new UnreadableException("JPEG sin EOI");
+            if ((b[i] & 0xFF) != 0xFF) throw new UnreadableException("JPEG con segmentos dañados");
+            int m = b[i + 1] & 0xFF;
+            if (m == 0xFF) { i++; continue; }                                       // relleno
+            if (m == 0xD9) { out.write(0xFF); out.write(0xD9); break; }             // EOI: lo que sigue se descarta
+            if (m == 0x01 || (m >= 0xD0 && m <= 0xD7)) { i += 2; continue; }        // sin longitud y fuera de un barrido: se quita
+            if (m == 0xD8 || m == 0x00) throw new UnreadableException("JPEG con marcador fuera de sitio");
+            if (i + 4 > b.length) throw new UnreadableException("JPEG truncado");
+            int len = u16be(b, i + 2), end = i + 2 + len;
+            if (len < 2 || end > b.length) throw new UnreadableException("JPEG truncado");
+            boolean keep;
+            if (m == 0xE0) keep = false;                                            // se reescribe abajo si es JFIF sin miniatura
+            else if (m >= 0xE1 && m <= 0xEF)
+                keep = (m == 0xE2 && ascii(b, i + 4, len - 2, "ICC_PROFILE\0")) || (m == 0xEE && ascii(b, i + 4, len - 2, "Adobe"));
+            else keep = m != 0xFE && !(m >= 0xF0 && m <= 0xFD);                     // COM y JPGn fuera
+            if (m == 0xE0 && len - 2 >= 14 && ascii(b, i + 4, len - 2, "JFIF\0") && b[i + 16] == 0 && b[i + 17] == 0) {
+                out.write(0xFF); out.write(0xE0); out.write(0); out.write(16);
+                out.write(b, i + 4, 14);
+            }
+            if (keep && !orientationWritten) { writeOrientation(out, orientation); orientationWritten = true; }
+            boolean isSof = m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC;
+            if (isSof) {
+                if (sof != 0) throw new UnreadableException("JPEG con varios SOF");
+                sof = m;
+            }
+            if (keep) out.write(b, i, end - i);
+            i = end;
+            if (m == 0xDA) {                                                        // SOS: copia los datos del barrido
+                if (sof == 0) throw new UnreadableException("JPEG con SOS antes del SOF");
+                scans++;
+                int j = i;
+                while (true) {
+                    if (j + 1 >= b.length) throw new UnreadableException("JPEG truncado");
+                    if ((b[j] & 0xFF) == 0xFF) {
+                        int n = b[j + 1] & 0xFF;
+                        if (n == 0x00 || (n >= 0xD0 && n <= 0xD7)) { j += 2; continue; }
+                        break;
+                    }
+                    j++;
+                }
+                out.write(b, i, j - i);
+                i = j;
+            }
+        }
+        if (sof == 0 || scans == 0) throw new UnreadableException("JPEG sin imagen");
+        return new Cleaned(out.toByteArray(), sof, scans);
+    }
+
+    /** APP1 Exif mínimo (big endian) con solo la etiqueta de orientación (0x0112). */
+    private static void writeOrientation(ByteArrayOutputStream out, int orientation) {
+        byte[] seg = {(byte) 0xFF, (byte) 0xE1, 0, 34, 'E', 'x', 'i', 'f', 0, 0,
+                'M', 'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, (byte) orientation, 0, 0, 0, 0, 0, 0};
+        out.write(seg, 0, seg.length);
+    }
+
+    private static Cleaned cleanPng(byte[] b) throws UnreadableException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(b.length);
+        out.write(b, 0, 8);
+        int i = 8;
+        while (true) {
+            if (i + 12 > b.length) throw new UnreadableException("PNG sin IEND");
+            long len = u32be(b, i);
+            if (len > b.length - i - 12L) throw new UnreadableException("PNG truncado");
+            String type = new String(b, i + 4, 4, java.nio.charset.StandardCharsets.US_ASCII);
+            int total = 12 + (int) len;
+            boolean critical = Character.isUpperCase(type.charAt(0));
+            if (critical || PNG_KEEP.contains(type)) out.write(b, i, total);
+            i += total;
+            if (type.equals("IEND")) break;
+        }
+        return new Cleaned(out.toByteArray(), 0, 0);
+    }
+
+    private static Cleaned cleanWebp(byte[] b) throws UnreadableException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(b.length);
+        out.write(b, 0, 12);
+        long riffEnd = Math.min(b.length, u32le(b, 4) + 8);
+        int i = 12;
+        while (i + 8 <= riffEnd) {
+            String fourcc = new String(b, i, 4, java.nio.charset.StandardCharsets.US_ASCII);
+            long size = u32le(b, i + 4);
+            if (size > riffEnd - i - 8) throw new UnreadableException("WebP con un fragmento truncado");
+            if (WEBP_KEEP.contains(fourcc)) {
+                byte[] chunk = Arrays.copyOfRange(b, i, i + 8 + (int) size);
+                if (fourcc.equals("VP8X") && size >= 1) chunk[8] &= (byte) ~0x0C; // sin indicadores EXIF (0x08) ni XMP (0x04)
+                out.write(chunk, 0, chunk.length);
+                if ((size & 1) == 1) out.write(0);
+            }
+            i += 8 + (int) size + (int) (size & 1);
+        }
+        byte[] r = out.toByteArray();
+        long riff = r.length - 8L;
+        for (int k = 0; k < 4; k++) r[4 + k] = (byte) (riff >>> (8 * k));
+        return new Cleaned(r, 0, 0);
+    }
+
+    private static boolean ascii(byte[] b, int start, int len, String s) {
+        if (len < s.length()) return false;
+        for (int k = 0; k < s.length(); k++) if (b[start + k] != (byte) s.charAt(k)) return false;
+        return true;
+    }
+
     // ---------- Variantes ----------
 
     /** true si ImageIO (sin librerías externas) sabe decodificar el formato. */

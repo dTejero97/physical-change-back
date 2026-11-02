@@ -10,6 +10,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
@@ -57,6 +58,122 @@ class BackgroundImagesTest {
         System.arraycopy(exif, 0, out, 6, exif.length);
         System.arraycopy(jpeg, 2, out, 6 + exif.length, jpeg.length - 2);
         return out;
+    }
+
+    // ---------- Imágenes con metadatos y JPEG sintéticos (T215) ----------
+
+    static final String SECRET_MAKE = "SecretCam", SECRET_XMP = "http://ns.adobe.com/xap/1.0/ secreto", SECRET_COMMENT = "comentario-secreto",
+            SECRET_TRAILER = "DATOS-TRAS-EOI";
+
+    /** Segmento JPEG con marcador y contenido. */
+    static byte[] segment(int marker, byte[] payload) {
+        byte[] s = new byte[4 + payload.length];
+        s[0] = (byte) 0xFF; s[1] = (byte) marker; s[2] = (byte) ((payload.length + 2) >> 8); s[3] = (byte) (payload.length + 2);
+        System.arraycopy(payload, 0, s, 4, payload.length);
+        return s;
+    }
+
+    static byte[] concat(byte[]... parts) {
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        for (byte[] p : parts) o.writeBytes(p);
+        return o.toByteArray();
+    }
+
+    /** APP1 Exif (big endian) con orientación, marca de cámara y un IFD GPS con latitud: lo que deja un móvil. */
+    static byte[] exifWithGps(int orientation) {
+        java.nio.ByteBuffer t = java.nio.ByteBuffer.allocate(102);
+        t.put(new byte[]{'M', 'M', 0, 42}).putInt(8);
+        t.putShort((short) 3);
+        t.putShort((short) 0x010F).putShort((short) 2).putInt(10).putInt(50);         // Make → 50
+        t.putShort((short) 0x0112).putShort((short) 3).putInt(1).putShort((short) orientation).putShort((short) 0);
+        t.putShort((short) 0x8825).putShort((short) 4).putInt(1).putInt(60);          // GPS IFD → 60
+        t.putInt(0);
+        t.put((SECRET_MAKE + "\0").getBytes());                                       // 50..60
+        t.putShort((short) 1);
+        t.putShort((short) 0x0002).putShort((short) 5).putInt(3).putInt(78);          // GPSLatitude → 78
+        t.putInt(0);
+        t.putInt(40).putInt(1).putInt(25).putInt(1).putInt(7).putInt(1);             // 78..102
+        return concat("Exif\0\0".getBytes(), t.array());
+    }
+
+    /** JPEG con EXIF/GPS, XMP, IPTC (APP13), comentario y datos tras EOI. */
+    static byte[] jpegWithMetadata(byte[] jpeg, int orientation) {
+        byte[] trailer = SECRET_TRAILER.getBytes();
+        return concat(Arrays.copyOf(jpeg, 2),
+                segment(0xE1, exifWithGps(orientation)),
+                segment(0xE1, SECRET_XMP.getBytes()),
+                segment(0xED, "Photoshop 3.0\0 IPTC secreto".getBytes()),
+                segment(0xFE, SECRET_COMMENT.getBytes()),
+                Arrays.copyOfRange(jpeg, 2, jpeg.length), trailer);
+    }
+
+    /** PNG con fragmentos tEXt, iTXt, eXIf y tIME añadidos antes de IEND. */
+    static byte[] pngWithMetadata(byte[] png) {
+        int iend = png.length - 12;
+        return concat(Arrays.copyOf(png, iend),
+                pngChunk("tEXt", ("Comment\0" + SECRET_COMMENT).getBytes()),
+                pngChunk("iTXt", ("XML:com.adobe.xmp\0\0\0\0\0" + SECRET_XMP).getBytes()),
+                pngChunk("eXIf", Arrays.copyOfRange(exifWithGps(1), 6, 6 + 102)),
+                pngChunk("tIME", new byte[]{0x07, (byte) 0xEA, 11, 1, 10, 0, 0}),
+                Arrays.copyOfRange(png, iend, png.length), SECRET_TRAILER.getBytes());
+    }
+
+    static byte[] pngChunk(String type, byte[] data) {
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(type.getBytes()); crc.update(data);
+        return java.nio.ByteBuffer.allocate(12 + data.length).putInt(data.length).put(type.getBytes()).put(data).putInt((int) crc.getValue()).array();
+    }
+
+    /** WebP VP8X con indicadores EXIF y XMP, y fragmentos EXIF (tamaño impar), XMP y uno desconocido. */
+    static byte[] webpWithMetadata(int w, int h) {
+        byte[] vp8x = new byte[18];
+        put(vp8x, 0, "VP8X"); le32(vp8x, 4, 10); vp8x[8] = 0x0C | 0x10; le24(vp8x, 12, w - 1); le24(vp8x, 15, h - 1);
+        byte[] exif = webpChunk("EXIF", SECRET_MAKE.getBytes());   // 9 bytes: lleva relleno
+        byte[] xmp = webpChunk("XMP ", SECRET_XMP.getBytes());
+        byte[] unknown = webpChunk("ZZZZ", SECRET_COMMENT.getBytes());
+        byte[] body = concat("WEBP".getBytes(), vp8x, exif, xmp, unknown);
+        byte[] riff = new byte[8];
+        put(riff, 0, "RIFF"); le32(riff, 4, body.length);
+        return concat(riff, body);
+    }
+
+    static byte[] webpChunk(String fourcc, byte[] data) {
+        byte[] c = new byte[8 + data.length + (data.length & 1)];
+        put(c, 0, fourcc); le32(c, 4, data.length); System.arraycopy(data, 0, c, 8, data.length);
+        return c;
+    }
+
+    /** JPEG sintético (sin píxeles válidos) con el SOF y el número de barridos indicados: solo sirve para la validación de estructura. */
+    static byte[] syntheticJpeg(int sof, int w, int h, int scans) {
+        byte[] sofPayload = {8, (byte) (h >> 8), (byte) h, (byte) (w >> 8), (byte) w, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1};
+        byte[] sos = {3, 1, 0, 2, 0x11, 3, 0x11, 0, 63, 0};
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        o.writeBytes(new byte[]{(byte) 0xFF, (byte) 0xD8});
+        o.writeBytes(segment(sof, sofPayload));
+        for (int k = 0; k < scans; k++) {
+            o.writeBytes(segment(0xDA, sos));
+            o.writeBytes(new byte[]{0x12, 0x34, (byte) 0xFF, 0x00, 0x56});
+        }
+        o.writeBytes(new byte[]{(byte) 0xFF, (byte) 0xD9});
+        return o.toByteArray();
+    }
+
+    /** JPEG progresivo real (SOF2) generado con ImageIO. */
+    static byte[] progressiveJpeg(int w, int h) throws Exception {
+        BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(image(w, h, "png")));
+        javax.imageio.ImageWriter wr = ImageIO.getImageWritersByFormatName("jpeg").next();
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (var out = ImageIO.createImageOutputStream(bos)) {
+            wr.setOutput(out);
+            javax.imageio.ImageWriteParam p = wr.getDefaultWriteParam();
+            p.setProgressiveMode(javax.imageio.ImageWriteParam.MODE_DEFAULT);
+            wr.write(null, new javax.imageio.IIOImage(img, null, null), p);
+        } finally { wr.dispose(); }
+        return bos.toByteArray();
+    }
+
+    static boolean containsAscii(byte[] b, String s) {
+        return new String(b, java.nio.charset.StandardCharsets.ISO_8859_1).contains(s);
     }
 
     static void put(byte[] b, int at, String s) { for (int i = 0; i < s.length(); i++) b[at + i] = (byte) s.charAt(i); }
@@ -129,6 +246,74 @@ class BackgroundImagesTest {
         byte[] cut = Arrays.copyOf(src, src.length / 2);
         Header h = BackgroundImages.header(cut);
         assertThrows(BackgroundImages.UnreadableException.class, () -> BackgroundImages.process(cut, h, 0.5, 0.5));
+    }
+
+    // ---------- Limpieza del original (T215) ----------
+
+    @Test void jpegSinMetadatosConservaLaOrientacionYSeDecodifica() throws Exception {
+        byte[] src = jpegWithMetadata(image(2000, 1200, "jpg"), 6);
+        assertTrue(containsAscii(src, SECRET_MAKE));
+        Header h = BackgroundImages.header(src);
+        BackgroundImages.Cleaned c = BackgroundImages.clean(src, h);
+        for (String s : new String[]{SECRET_MAKE, SECRET_XMP, SECRET_COMMENT, SECRET_TRAILER, "Photoshop", "IPTC"})
+            assertFalse(containsAscii(c.data(), s), s);
+        assertEquals(BackgroundImages.SOF_BASELINE, c.sof());
+        assertEquals(1, c.scans());
+        // Orientación reescrita en un APP1 mínimo (36 bytes, solo la etiqueta 0x0112): se sigue viendo igual (vertical).
+        assertEquals(h, BackgroundImages.header(c.data()));
+        assertEquals((byte) 0xD9, c.data()[c.data().length - 1]);
+        BufferedImage img = ImageIO.read(new java.io.ByteArrayInputStream(c.data()));
+        assertEquals(2000, img.getWidth());
+        // Se ve vertical (1200 de ancho): solo w768, p1080 y thumb (w1280/w1920 exigen ese ancho, api-fondos.md)
+        assertEquals(List.of("w768", "p1080", "thumb"),
+                BackgroundImages.process(c.data(), h, 0.5, 0.5).variants().stream().map(v -> v.name()).toList());
+    }
+
+    @Test void jpegSinOrientacionNoLlevaApp1() throws Exception {
+        byte[] src = jpegWithMetadata(image(1920, 1080, "jpg"), 1);
+        BackgroundImages.Cleaned c = BackgroundImages.clean(src, BackgroundImages.header(src));
+        assertFalse(containsAscii(c.data(), "Exif"));
+        assertTrue(containsAscii(c.data(), "JFIF"));   // APP0 sin miniatura se conserva
+    }
+
+    @Test void jpegProgresivoYEstructuraCompleta() throws Exception {
+        byte[] prog = progressiveJpeg(1920, 1080);
+        BackgroundImages.Cleaned c = BackgroundImages.clean(prog, BackgroundImages.header(prog));
+        assertEquals(BackgroundImages.SOF_PROGRESSIVE, c.sof());
+        assertTrue(c.scans() > 1);
+        byte[] arith = syntheticJpeg(0xC9, 1920, 1080, 1);
+        assertEquals(0xC9, BackgroundImages.clean(arith, BackgroundImages.header(arith)).sof());
+        byte[] many = syntheticJpeg(0xC2, 1920, 1080, 200);
+        assertEquals(200, BackgroundImages.clean(many, BackgroundImages.header(many)).scans());
+        // Sin EOI o con dos SOF: ilegible.
+        byte[] noEoi = Arrays.copyOf(prog, prog.length - 2);
+        assertThrows(BackgroundImages.UnreadableException.class, () -> BackgroundImages.clean(noEoi, BackgroundImages.header(noEoi)));
+        byte[] twoSof = concat(Arrays.copyOf(arith, arith.length - 2), segment(0xC0, Arrays.copyOfRange(arith, 6, 21)), new byte[]{(byte) 0xFF, (byte) 0xD9});
+        assertThrows(BackgroundImages.UnreadableException.class, () -> BackgroundImages.clean(twoSof, BackgroundImages.header(twoSof)));
+    }
+
+    @Test void pngSinFragmentosDeTexto() throws Exception {
+        byte[] src = pngWithMetadata(image(1920, 1080, "png"));
+        BackgroundImages.Cleaned c = BackgroundImages.clean(src, BackgroundImages.header(src));
+        for (String s : new String[]{"tEXt", "iTXt", "eXIf", "tIME", SECRET_COMMENT, SECRET_XMP, SECRET_MAKE, SECRET_TRAILER})
+            assertFalse(containsAscii(c.data(), s), s);
+        assertTrue(containsAscii(c.data(), "IDAT"));
+        BufferedImage img = ImageIO.read(new java.io.ByteArrayInputStream(c.data()));
+        assertEquals(1920, img.getWidth());
+        byte[] cut = Arrays.copyOf(src, 200);
+        assertThrows(BackgroundImages.UnreadableException.class, () -> BackgroundImages.clean(cut, BackgroundImages.header(cut)));
+    }
+
+    @Test void webpSinExifNiXmp() throws Exception {
+        byte[] src = webpWithMetadata(3840, 2160);
+        Header h = BackgroundImages.header(src);
+        BackgroundImages.Cleaned c = BackgroundImages.clean(src, h);
+        byte[] d = c.data();
+        for (String s : new String[]{"EXIF", "XMP ", "ZZZZ", SECRET_MAKE, SECRET_XMP, SECRET_COMMENT}) assertFalse(containsAscii(d, s), s);
+        assertEquals(30, d.length);                       // RIFF + WEBP + VP8X
+        assertEquals(d.length - 8, d[4] & 0xFF);          // tamaño RIFF recalculado
+        assertEquals(0x10, d[20]);                        // indicadores EXIF y XMP apagados, alfa intacto
+        assertEquals(h, BackgroundImages.header(d));
     }
 
     @Test void pngConTransparenciaYWebpSinVariantes() throws Exception {

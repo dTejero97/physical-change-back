@@ -52,6 +52,16 @@ public class BackgroundService {
     /** Bombas de descompresión: se rechaza antes de decodificar (40 MP cubre de sobra el 8K, 33 MP). */
     public static final long MAX_PIXELS = 40_000_000L;
     public static final int MAX_SIDE = 16_384;
+    /**
+     * JPEG progresivo (T215, M-2 de T211): el decodificador de Java guarda los coeficientes a resolución completa aunque se
+     * submuestree (≈ 4 bytes por píxel), así que su tope es menor.
+     */
+    public static final long MAX_PROGRESSIVE_PIXELS = 12_000_000L;
+    /** Barridos (SOS) admitidos: un progresivo normal tiene unos 10; cada barrido recorre otra vez los coeficientes. */
+    public static final int MAX_SCANS = 64;
+    /** Nombre del fondo subido en el JSON público (B-3 de T211: no se publica el nombre del archivo). */
+    static final String PUBLIC_UPLOADED_NAME = "Fondo personalizado";
+    static final String CACHE_BUILTIN = "public, max-age=86400", CACHE_UPLOADED = "public, max-age=300";
     /** Nombres válidos en las URL de imagen. */
     public static final Set<String> IMAGE_NAMES = Set.of("original", "w768", "w1280", "w1920", "p1080", "thumb");
     static final long SIGNED_TTL_SECONDS = 3600;
@@ -184,8 +194,9 @@ public class BackgroundService {
     public PublicBackgroundDto publicActive() {
         LoadingBackground b = activeBackground();
         List<BackgroundImageDto> vs = images(b, variants.findByBackgroundIdOrderByIdAsc(b.getId()), true);
-        return new PublicBackgroundDto(b.getId(), b.getName(), b.isBuiltin(), b.getContentType(), b.getWidth(), b.getHeight(),
-                b.getObjectPosition(), lqip(b), original(b, true), vs);
+        // T215: el original solo se publica si no hay variantes (WebP); el nombre del archivo subido no se publica.
+        return new PublicBackgroundDto(b.getId(), b.isBuiltin() ? b.getName() : PUBLIC_UPLOADED_NAME, b.isBuiltin(), b.getContentType(),
+                b.getWidth(), b.getHeight(), b.getObjectPosition(), lqip(b), vs.isEmpty() ? original(b, true) : null, vs);
     }
 
     public Long activeId() { return setting().getActiveBackgroundId(); }
@@ -205,15 +216,21 @@ public class BackgroundService {
                 throw new ForbiddenException("Enlace no válido o caducado");
         } else if (!b.isBuiltin() && !b.getId().equals(activeId())) {
             throw notFound();
+        } else if ("original".equals(name) && hasVariants(b)) {
+            throw notFound(); // T215 (M-1/M-3): el original de un JPEG/PNG no se publica sin firma
         }
-        return send(b, name, signed ? "private, max-age=" + SIGNED_TTL_SECONDS : "public, max-age=86400", ifNoneMatch, false);
+        String cache = signed ? "private, max-age=" + SIGNED_TTL_SECONDS : b.isBuiltin() ? CACHE_BUILTIN : CACHE_UPLOADED;
+        return send(b, name, cache, ifNoneMatch, false);
     }
 
-    /** Alias estable del fondo activo (para <link rel="preload">): caché corta. Sin esa variante (WebP), el original. */
+    /**
+     * Alias estable del fondo activo (para <link rel="preload">): caché corta. Sin variantes (WebP), el original; si falta la
+     * variante pedida (o se pide el original), la w* más ancha. Nunca cae al original de un JPEG/PNG (T215).
+     */
     @Transactional(readOnly = true)
     public ResponseEntity<byte[]> activeImage(String name, String ifNoneMatch) {
         if (!IMAGE_NAMES.contains(name)) throw notFound();
-        return send(activeBackground(), name, "public, max-age=300", ifNoneMatch, true);
+        return send(activeBackground(), name, CACHE_UPLOADED, ifNoneMatch, true);
     }
 
     // ---------- Siembra de los fondos iniciales ----------
@@ -287,6 +304,25 @@ public class BackgroundService {
             throw new BackgroundException(HttpStatus.BAD_REQUEST, List.of(new Reason("BACKGROUND_TOO_MANY_PIXELS",
                     "La imagen mide " + h.width() + " × " + h.height() + " px y el máximo es 40 megapíxeles (" + MAX_SIDE + " px por lado). Redúcela a 3840 × 2160.")),
                     h.width(), h.height(), (long) bytes.length);
+        // Estructura completa sin decodificar y original sin metadatos (T215).
+        BackgroundImages.Cleaned cl;
+        try { cl = BackgroundImages.clean(bytes, h); } catch (UnreadableException e) { throw unreadable(name, h.width(), h.height(), bytes.length); }
+        if (h.format() == Format.JPEG) {
+            int sof = cl.sof();
+            if (sof != BackgroundImages.SOF_BASELINE && sof != BackgroundImages.SOF_EXTENDED && sof != BackgroundImages.SOF_PROGRESSIVE)
+                throw new BackgroundException(HttpStatus.BAD_REQUEST, List.of(new Reason("BACKGROUND_UNREADABLE",
+                        "«" + name + "» usa un tipo de JPEG que no se admite (aritmético, sin pérdida o jerárquico). Vuelve a exportarla desde tu editor de fotos como JPEG normal.")),
+                        h.width(), h.height(), (long) bytes.length);
+            if (sof == BackgroundImages.SOF_PROGRESSIVE && px > MAX_PROGRESSIVE_PIXELS)
+                throw new BackgroundException(HttpStatus.BAD_REQUEST, List.of(new Reason("BACKGROUND_TOO_MANY_PIXELS",
+                        "La imagen es un JPEG progresivo de " + h.width() + " × " + h.height() + " px y en ese tipo el máximo es 12 megapíxeles. Redúcela a 3840 × 2160 o expórtala como JPEG normal (no progresivo).")),
+                        h.width(), h.height(), (long) bytes.length);
+            if (cl.scans() > MAX_SCANS)
+                throw new BackgroundException(HttpStatus.BAD_REQUEST, List.of(new Reason("BACKGROUND_UNREADABLE",
+                        "«" + name + "» tiene una estructura JPEG poco habitual (" + cl.scans() + " barridos). Vuelve a exportarla desde tu editor de fotos.")),
+                        h.width(), h.height(), (long) bytes.length);
+        }
+        bytes = cl.data();
         int longSide = Math.max(h.width(), h.height()), shortSide = Math.min(h.width(), h.height());
         if (longSide < MIN_LONG_SIDE || shortSide < MIN_SHORT_SIDE)
             throw new BackgroundException(HttpStatus.BAD_REQUEST, List.of(new Reason("BACKGROUND_TOO_SMALL",
@@ -331,7 +367,7 @@ public class BackgroundService {
         boolean open = b.isBuiltin() || active;
         boolean canDelete = !b.isBuiltin() && !active && (me.role() == Role.ADMIN || me.id().equals(b.getUploadedBy()));
         return new BackgroundDto(b.getId(), b.getName(), b.isBuiltin(), active, b.getContentType(), b.getWidth(), b.getHeight(), b.getSizeBytes(),
-                b.getHeight() > b.getWidth(), b.getObjectPosition(), lqip(b), original(b, open), images(b, vs, open),
+                b.getHeight() > b.getWidth(), b.getObjectPosition(), lqip(b), original(b, open && !b.isBuiltin() && vs.isEmpty()), images(b, vs, open),
                 person(b.getUploadedBy(), names), b.isBuiltin() ? null : b.getCreatedAt(), canDelete);
     }
 
@@ -362,27 +398,41 @@ public class BackgroundService {
         return u + "?exp=" + exp + "&sig=" + sign(id, name, exp);
     }
 
-    private ResponseEntity<byte[]> send(LoadingBackground b, String name, String cache, String ifNoneMatch, boolean fallbackToOriginal) {
+    /** true si el fondo tiene variantes (todos salvo los WebP subidos). */
+    private boolean hasVariants(LoadingBackground b) {
+        return b.isBuiltin() ? !builtinProcessed(b.getBuiltinKey()).variants().isEmpty() : variants.existsByBackgroundId(b.getId());
+    }
+
+    /** La w* más ancha de la lista (fallback del alias); null si no hay ninguna. */
+    private static <T> T widest(List<T> list, Function<T, String> name, Function<T, Integer> width) {
+        return list.stream().filter(x -> name.apply(x).startsWith("w")).max(Comparator.comparing(width)).orElse(null);
+    }
+
+    /**
+     * Imagen de un fondo. alias = true (ruta active/{name}): si falta la variante o se pide el original, la w* más ancha; el
+     * original solo si no hay variantes (WebP). alias = false: la imagen pedida o 404.
+     */
+    private ResponseEntity<byte[]> send(LoadingBackground b, String name, String cache, String ifNoneMatch, boolean alias) {
         String resolved = name;
         StoredFile stored = null;
         byte[] body = null;
         String type = "image/jpeg";
         if (b.isBuiltin()) {
-            if ("original".equals(name)) { body = builtinBytes(b.getBuiltinKey()); type = b.getContentType(); }
-            else {
-                body = builtinProcessed(b.getBuiltinKey()).variants().stream().filter(v -> v.name().equals(name)).map(Variant::data).findFirst().orElse(null);
-                if (body == null) {
-                    if (!fallbackToOriginal) throw notFound();
-                    resolved = "original"; body = builtinBytes(b.getBuiltinKey()); type = b.getContentType();
-                }
-            }
+            List<Variant> vs = builtinProcessed(b.getBuiltinKey()).variants();
+            Variant v = vs.stream().filter(x -> x.name().equals(name)).findFirst().orElse(null);
+            if (v == null && alias) v = widest(vs, Variant::name, Variant::width);
+            if (v != null) { resolved = v.name(); body = v.data(); }
+            else if ("original".equals(name) && !alias) { body = builtinBytes(b.getBuiltinKey()); type = b.getContentType(); }
+            else if (alias && vs.isEmpty()) { resolved = "original"; body = builtinBytes(b.getBuiltinKey()); type = b.getContentType(); }
+            else throw notFound();
         } else {
-            Long fileId = null;
-            if (!"original".equals(name)) fileId = variants.findByBackgroundIdAndVariant(b.getId(), name).map(LoadingBackgroundVariant::getFileId).orElse(null);
-            if (fileId == null) {
-                if (!"original".equals(name) && !fallbackToOriginal) throw notFound();
-                resolved = "original"; fileId = b.getFileId(); type = b.getContentType();
-            }
+            List<LoadingBackgroundVariant> vs = variants.findByBackgroundIdOrderByIdAsc(b.getId());
+            LoadingBackgroundVariant v = vs.stream().filter(x -> x.getVariant().equals(name)).findFirst().orElse(null);
+            if (v == null && alias) v = widest(vs, LoadingBackgroundVariant::getVariant, LoadingBackgroundVariant::getWidth);
+            Long fileId;
+            if (v != null) { resolved = v.getVariant(); fileId = v.getFileId(); }
+            else if (("original".equals(name) && !alias) || (alias && vs.isEmpty())) { resolved = "original"; fileId = b.getFileId(); type = b.getContentType(); }
+            else throw notFound();
             stored = storedFiles.findById(fileId).orElseThrow(BackgroundService::notFound);
         }
         String etag = "\"bg-" + b.getId() + "-" + resolved + "\"";

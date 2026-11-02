@@ -10,4 +10,5 @@ public interface LoadingBackgroundVariantRepository extends JpaRepository<Loadin
     List<LoadingBackgroundVariant> findByBackgroundIdOrderByIdAsc(Long backgroundId);
     List<LoadingBackgroundVariant> findByBackgroundIdIn(Collection<Long> backgroundIds);
     Optional<LoadingBackgroundVariant> findByBackgroundIdAndVariant(Long backgroundId, String variant);
+    boolean existsByBackgroundId(Long backgroundId);
 }
