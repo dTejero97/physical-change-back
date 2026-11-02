@@ -1,1 +1,2 @@
-org.springframework.boot.env.EnvironmentPostProcessor=com.physicalchange.config.DatabaseUrlEnvironmentPostProcessor
+org.springframework.boot.env.EnvironmentPostProcessor=com.physicalchange.config.DatabaseUrlEnvironmentPostProcessor,\
+  com.physicalchange.config.TimeZoneEnvironmentPostProcessor
