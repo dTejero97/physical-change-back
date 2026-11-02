@@ -170,7 +170,7 @@ public class WorkoutService {
             int pct = TrainingMath.percent(mine.size(), i.getSets());
             sum += pct;
             out.add(new ComplianceItemDto(i.getId(), e.getId(), e.getName(), e.getMuscleGroup(), i.getSets(), i.getReps(),
-                    i.getWeightKg(), mine.size(), maxReps, maxWeight, volume, pct));
+                    i.getWeightKg(), mine.size(), maxReps, maxWeight, volume, pct, i.getRestSeconds()));
         }
         int overall = plan.isEmpty() ? 0 : sum / plan.size();
         return new ComplianceDto(a.getId(), w.getId(), w.getName(), a.getClientId(), a.getScheduledDate(),

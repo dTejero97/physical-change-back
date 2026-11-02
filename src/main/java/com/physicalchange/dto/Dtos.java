@@ -133,7 +133,7 @@ public final class Dtos {
     public record ComplianceItemDto(Long workoutItemId, Long exerciseId, String exerciseName, String muscleGroup,
                                     Integer plannedSets, Integer plannedReps, BigDecimal plannedWeightKg,
                                     int loggedSets, int loggedMaxReps, BigDecimal loggedMaxWeightKg,
-                                    BigDecimal loggedVolumeKg, int percent) {}
+                                    BigDecimal loggedVolumeKg, int percent, Integer plannedRestSeconds) {}
     public record ComplianceDto(Long assignmentId, Long workoutId, String workoutName, Long clientId, LocalDate scheduledDate,
                                 LocalDate completedDate, int percent, List<ComplianceItemDto> items) {}
 

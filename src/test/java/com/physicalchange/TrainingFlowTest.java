@@ -82,6 +82,8 @@ class TrainingFlowTest {
         Assertions.assertEquals(67, compliance.get("items").get(0).get("percent").asInt());
         Assertions.assertEquals(0, compliance.get("items").get(0).get("plannedWeightKg").decimalValue().compareTo(new java.math.BigDecimal("60")));
         Assertions.assertEquals(62.5, compliance.get("items").get(0).get("loggedMaxWeightKg").asDouble());
+        // El cliente no puede leer la rutina (/api/workouts/**): el descanso planificado le llega en el cumplimiento
+        Assertions.assertEquals(90, compliance.get("items").get(0).get("plannedRestSeconds").asInt());
 
         // Panel de progreso: ejercicio y musculatura
         JsonNode strength = call(get("/api/progress/strength/" + clientId).header("Authorization", clientToken), 200);
