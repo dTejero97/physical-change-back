@@ -8,7 +8,7 @@ import java.util.Optional;
 
 public interface ProgressEntryRepository extends JpaRepository<ProgressEntry, Long> {
     List<ProgressEntry> findByClientIdOrderByEntryDateAsc(Long clientId);
-    /** Único por (cliente, día) desde V16. */
+    /** Único por (cliente, día) desde V19. */
     Optional<ProgressEntry> findByClientIdAndEntryDate(Long clientId, LocalDate entryDate);
     List<ProgressEntry> findByClientIdAndEntryDateBetween(Long clientId, LocalDate from, LocalDate to);
 }

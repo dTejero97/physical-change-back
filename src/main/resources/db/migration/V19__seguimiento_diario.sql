@@ -1,11 +1,11 @@
 -- =====================================================================
--- Physical Change · V16 · Seguimiento diario del cliente (diario y peso único por día)
+-- Physical Change · V19 · Seguimiento diario del cliente (diario y peso único por día)
 -- (PostgreSQL 16) — Fase 6.6, T201. Especificación: docs/diseno-fase6.md §3.4.1 y §3.8 (D1, D2, D3)
 -- Contrato: physical-change-back/docs/api-cliente-seguimiento.md
 -- No editar una vez desplegado.
 --
--- Reversión manual (restaura los registros de peso duplicados tal y como estaban antes de V16;
--- se pierden los cambios hechos después de V16 en los días que tenían duplicados):
+-- Reversión manual (restaura los registros de peso duplicados tal y como estaban antes de V19;
+-- se pierden los cambios hechos después de V19 en los días que tenían duplicados):
 --   ALTER TABLE progress_entry DROP CONSTRAINT uq_progress_entry_client_date;
 --   CREATE INDEX ix_progress_client_date ON progress_entry (client_id, entry_date);
 --   DELETE FROM progress_entry WHERE id IN (SELECT kept_id FROM progress_entry_dup_v16);

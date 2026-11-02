@@ -14,7 +14,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Peso y grasa corporal. Un único registro por cliente y día desde V16 (T201, D2): guardar un día ya registrado lo actualiza. */
+/** Peso y grasa corporal. Un único registro por cliente y día desde V19 (T201, D2): guardar un día ya registrado lo actualiza. */
 @Service
 public class ProgressService {
     private final ProgressEntryRepository repo; private final AccessService access; private final ApplicationEventPublisher publisher;
@@ -43,7 +43,7 @@ public class ProgressService {
     /**
      * Peso del día con una nota (p. ej. el cuestionario inicial): actualiza el registro de hoy o lo crea. La nota solo se pone
      * si el registro no tenía ninguna. Así repetir el guardado no duplica registros. Sustituye a T196/B6 ("registro propio"):
-     * desde V16 hay un solo peso por día (T201), el último guardado.
+     * desde V19 hay un solo peso por día (T201), el último guardado.
      */
     @Transactional
     public void recordTodayWeight(Long clientId, BigDecimal weightKg, String note) {
@@ -81,7 +81,7 @@ public class ProgressService {
         if (notes != null) e.setNotes(notes);
         try {
             return repo.saveAndFlush(e);
-        } catch (DataIntegrityViolationException ex) {   // otro guardado del mismo día a la vez (restricción única de V16)
+        } catch (DataIntegrityViolationException ex) {   // otro guardado del mismo día a la vez (restricción única de V19)
             throw new ConflictException("El registro de ese día se está guardando a la vez; vuelve a intentarlo");
         }
     }

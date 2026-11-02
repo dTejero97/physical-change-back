@@ -2,7 +2,7 @@
 
 - **Versión del contrato:** 1.0.0, 2026-10-30 (T201).
 - **Especificación:** `docs/diseno-fase6.md` §3.4.1 (Diario), §3.5 (Calendario) y §3.8 (D1, D2, D3 y D17), en la raíz del proyecto.
-- **Migración:** `V16__seguimiento_diario.sql` (V15 es la del generador de contenido; Stripe, T127, pasa a V17).
+- **Migración:** `V19__seguimiento_diario.sql` (era V16; renumerada el 2026-11-02 porque producción ya tenía V18 y Flyway no aplica migraciones atrasadas. V15 es la del generador de contenido; Stripe, T127, también tendrá que usar un número mayor que el último aplicado).
 - **Swagger:** grupo "Seguimiento diario".
 
 ## Reglas comunes
@@ -95,7 +95,7 @@ Cuerpo `DailyLogRequest`:
 - No hay escritura del profesional: el diario lo rellena el cliente.
 
 ## D2 · Peso único por día — `POST /api/progress` (cambio compatible)
-- Desde V16 hay **un único** registro de `progress_entry` por `(client_id, entry_date)`.
+- Desde V19 hay **un único** registro de `progress_entry` por `(client_id, entry_date)`.
 - `POST /api/progress` pasa a ser **"insertar o actualizar el día"**:
   - si no hay registro ese día, lo crea;
   - si ya lo hay, lo actualiza y devuelve **el mismo `id`**: cada campo que llega con valor (`weightKg`, `bodyFatPct`, `notes`)
@@ -105,11 +105,11 @@ Cuerpo `DailyLogRequest`:
 - 409 si dos guardados del mismo día chocan a la vez (reintentar).
 - El peso del asistente de bienvenida (`PUT /api/me/onboarding`) usa la misma regla sobre el día de hoy.
 
-### Migración de los duplicados existentes (V16)
+### Migración de los duplicados existentes (V19, antes V16)
 - Por cada `(client_id, entry_date)` con varios registros se **conserva el más reciente** (el `id` mayor) y se le completa cada
   campo vacío (`weight_kg`, `body_fat_pct`, `notes`) con el valor del registro más reciente que lo tenga.
 - **No se pierde nada:** todas las filas de esos días, también la conservada con sus valores originales, se copian antes en
-  `progress_entry_dup_v16` (con `kept_id`). La reversión de la cabecera de V16 las restaura.
+  `progress_entry_dup_v16` (con `kept_id`). La reversión de la cabecera de V19 las restaura.
 - `progress_entry_dup_v16` es temporal: se borrará en una migración posterior, cuando el profesional haya podido revisar los
   datos (decisión pendiente del Jefe; ver "Dudas").
 

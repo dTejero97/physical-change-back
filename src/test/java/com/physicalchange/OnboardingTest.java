@@ -260,7 +260,7 @@ class OnboardingTest {
     }
 
     /**
-     * Desde V16 hay un solo peso por día (T201, contrato D2): el del cuestionario actualiza el registro de hoy, sin duplicarlo
+     * Desde V19 hay un solo peso por día (T201, contrato D2): el del cuestionario actualiza el registro de hoy, sin duplicarlo
      * y sin cambiar la nota que ya tenía (sustituye a la regla de T196/B6, que creaba un registro propio).
      */
     @Test void elPesoDelCuestionarioActualizaElDiaSinPisarSuNota() throws Exception {
