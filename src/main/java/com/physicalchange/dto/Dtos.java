@@ -32,6 +32,18 @@ public final class Dtos {
     /** Versión del servidor (build-info); builtAt null si se arranca sin empaquetar. */
     public record VersionDto(String version, java.time.Instant builtAt) {}
     public record ProfessionalDto(Long id, String fullName, boolean trainingEnabled, boolean nutritionEnabled) {}
+    // ---- Profesionales que da de alta el ADMIN (T228, docs/api-profesionales.md) ----
+    /** username: un email o un usuario corto (3-40: letras minúsculas, números, punto, guion y guion bajo), como "admin". */
+    public record ProfessionalCreateRequest(
+            @NotBlank @Size(min = 3, max = 160)
+            @Pattern(regexp = "[a-z0-9._-]{3,40}|[^@\\s]+@[^@\\s]+\\.[^@\\s]+", message = "Usuario no válido: un email o de 3 a 40 letras minúsculas, números, punto o guion")
+            String username,
+            @NotBlank @Size(max = 120) String fullName, @NotBlank @Size(min = 8, max = 72) String password,
+            boolean training, boolean nutrition) {}
+    public record ProfessionalUpdateRequest(@NotBlank @Size(max = 120) String fullName, boolean training, boolean nutrition, boolean active) {}
+    public record ProfessionalPasswordRequest(@NotBlank @Size(min = 8, max = 72) String password) {}
+    public record ProfessionalAdminDto(Long id, String username, String fullName, boolean trainingEnabled, boolean nutritionEnabled,
+                                       boolean active, int clients) {}
     public record UpdateProfileRequest(@NotBlank @Size(max = 120) String fullName) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank @Size(min = 8, max = 72) String newPassword) {}
 
