@@ -57,7 +57,7 @@ public class AuthService {
     @Transactional
     public UserDto updateServices(ServicesRequest r) {
         AppUser u = currentUser();
-        if (u.getRole() != Role.TRAINER) throw new ForbiddenException("Solo un profesional ofrece servicios");
+        if (u.getRole() != Role.TRAINER && u.getRole() != Role.ADMIN) throw new ForbiddenException("Solo un profesional ofrece servicios");
         if (!r.training() && !r.nutrition()) throw new BadRequestException("Ofrece al menos entrenamiento o nutrición");
         u.setTrainingEnabled(r.training());
         u.setNutritionEnabled(r.nutrition());
