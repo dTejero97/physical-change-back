@@ -24,6 +24,8 @@ public class GlobalExceptionHandler {
         return e.retryAfterSeconds() == null ? r
                 : ResponseEntity.status(r.getStatusCode()).header("Retry-After", String.valueOf(e.retryAfterSeconds())).body(r.getBody());
     }
+    @ExceptionHandler(com.physicalchange.payment.PaymentException.class)
+    ResponseEntity<ErrorResponse> pay(com.physicalchange.payment.PaymentException e) { return build(HttpStatus.valueOf(e.status()), e.getMessage()); }
     @ExceptionHandler(TooManyRequestsException.class) ResponseEntity<ErrorResponse> tm(TooManyRequestsException e) {
         ResponseEntity<ErrorResponse> r = build(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
         return ResponseEntity.status(r.getStatusCode()).header("Retry-After", String.valueOf(e.retryAfterSeconds())).body(r.getBody());

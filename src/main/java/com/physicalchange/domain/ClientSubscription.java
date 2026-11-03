@@ -21,6 +21,9 @@ public class ClientSubscription {
     @Column(nullable = false, length = 10) private String status = "ACTIVE";
     @Column(name = "CREATED_AT", nullable = false) private LocalDateTime createdAt = LocalDateTime.now();
     @Column(name = "CANCELLED_AT") private LocalDateTime cancelledAt;
+    /** Cobrada por Stripe (V20): la puesta al día no emite pendientes; cada periodo llega pagado por webhook. */
+    @Column(name = "STRIPE_SUBSCRIPTION_ID", unique = true, length = 255) private String stripeSubscriptionId;
+    @Column(name = "CANCEL_AT_PERIOD_END", nullable = false) private boolean cancelAtPeriodEnd;
 
     public Long getId() { return id; }
     public Long getTrainerId() { return trainerId; }
@@ -42,4 +45,8 @@ public class ClientSubscription {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getCancelledAt() { return cancelledAt; }
     public void setCancelledAt(LocalDateTime c) { this.cancelledAt = c; }
+    public String getStripeSubscriptionId() { return stripeSubscriptionId; }
+    public void setStripeSubscriptionId(String id) { this.stripeSubscriptionId = id; }
+    public boolean isCancelAtPeriodEnd() { return cancelAtPeriodEnd; }
+    public void setCancelAtPeriodEnd(boolean c) { this.cancelAtPeriodEnd = c; }
 }

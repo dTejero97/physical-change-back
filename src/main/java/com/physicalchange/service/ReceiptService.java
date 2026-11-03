@@ -183,13 +183,37 @@ public class ReceiptService {
     public ReceiptDto voidReceipt(Long id, String reason) {
         Receipt x = owned(id);
         if ("VOID".equals(x.getStatus())) throw new ConflictException("El comprobante ya está anulado");
+        applyVoid(x, reason.strip());
+        return toDtos(List.of(x)).get(0);
+    }
+
+    // ---------- Stripe: solo desde el webhook firmado (ADR-009 §6), sin usuario en sesión ----------
+
+    /** PENDING → PAID con método STRIPE. Devuelve false si ya no estaba pendiente (pagado a mano o anulado entretanto). */
+    @Transactional
+    public boolean markPaidByStripe(Long id) {
+        Receipt x = receipts.findById(id).orElse(null);
+        if (x == null || !"PENDING".equals(x.getStatus())) return false;
+        x.setStatus("PAID");
+        x.setPaidDate(LocalDate.now());
+        x.setMethod("STRIPE");
+        events.publishEvent(new ReceiptPaidEvent(x.getId()));
+        return true;
+    }
+
+    /** Reembolso total en Stripe: anula el comprobante (cuenta como anulación/reembolso en los KPIs). */
+    @Transactional
+    public void voidByStripeRefund(Long id) {
+        receipts.findById(id).filter(x -> !"VOID".equals(x.getStatus())).ifPresent(x -> applyVoid(x, "Reembolsado en Stripe"));
+    }
+
+    private void applyVoid(Receipt x, String reason) {
         boolean wasPaid = "PAID".equals(x.getStatus());
         x.setWasPaid(wasPaid);
         x.setStatus("VOID");
-        x.setVoidReason(reason.strip());
+        x.setVoidReason(reason);
         x.setVoidedAt(LocalDateTime.now());
         events.publishEvent(new ReceiptVoidedEvent(x.getId(), wasPaid));
-        return toDtos(List.of(x)).get(0);
     }
 
     /** Comprobante propio o 404 (no se revela si existe uno ajeno). */

@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 /**
  * Productos de pago único y planes de suscripción (ADR-004 §3, docs/api-negocio.md). Mismas reglas para los dos:
- * portada, visibilidad HIDDEN (ALL → 409 hasta la tienda en la app), hasta 5 bonos de tipos de sesión propios, etiquetas
+ * portada, visibilidad (productos: solo HIDDEN, ALL → 409; planes: ALL = el cliente lo ve y lo contrata con Stripe, T128), hasta 5 bonos de tipos de sesión propios, etiquetas
  * automáticas propias y archivado lógico si ya hay ventas. Lo ajeno responde 404.
  */
 @Service
@@ -167,7 +167,7 @@ public class CatalogService {
         x.setPrice(r.price().setScale(2, RoundingMode.HALF_UP));
         x.setTaxRate(taxRate(r.taxRate()));
         x.setFrequency(r.frequency());
-        x.setVisibility(visibility(r.visibility()));
+        x.setVisibility("ALL".equals(r.visibility()) ? "ALL" : "HIDDEN");
         x.setCover(files.checkCover(r.cover(), true));
         x.getAutoTagIds().clear();
         x.getAutoTagIds().addAll(checkTags(r.autoTagIds()));
@@ -178,7 +178,8 @@ public class CatalogService {
         return plans.findById(id).filter(x -> x.getTrainerId().equals(me().id())).orElseThrow(() -> new NotFoundException("Plan no encontrado"));
     }
 
-    private List<SubscriptionPlanDto> planDtos(List<SubscriptionPlan> list) {
+    /** También lo usa OnlinePaymentService para el catálogo del cliente (solo copia los campos públicos). */
+    List<SubscriptionPlanDto> planDtos(List<SubscriptionPlan> list) {
         Set<Long> ids = list.stream().map(SubscriptionPlan::getId).collect(Collectors.toSet());
         Map<Long, List<BonusDefinitionDto>> b = bonusDtos(ids.isEmpty() ? List.of() : bonuses.findByPlanIdIn(ids), BonusDefinition::getPlanId);
         Map<Long, Long> sales = counts(ids.isEmpty() ? List.of() : lines.salesByPlan(ids));

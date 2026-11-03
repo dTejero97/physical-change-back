@@ -248,6 +248,17 @@ public final class Dtos {
     public record ClientBonusDto(Long id, Long sessionTypeId, String sessionTypeName, String color, int total, int used, int remaining,
                                  LocalDate expiresAt, String status, Long receiptId, String productName) {}
 
+    // ---- Pagos online con Stripe (docs/api-pagos-stripe.md, ADR-009) ----
+    public record CheckoutDto(Long orderId, String checkoutUrl) {}
+    public record OrderDto(Long id, String kind, String concept, BigDecimal amount, String status, Long receiptId, Long planId,
+                           LocalDateTime createdAt, LocalDateTime paidAt) {}
+    public record ClientPlanDto(Long id, String name, String description, BigDecimal price, int taxRate, String frequency, String coverUrl,
+                                List<BonusDefinitionDto> bonuses, boolean subscribed) {}
+    public record MySubscriptionDto(Long id, Long planId, String planName, String frequency, BigDecimal price, String status,
+                                    LocalDate startDate, LocalDate nextPeriodStart, boolean cancelAtPeriodEnd, boolean online) {}
+    public record PortalDto(String url) {}
+    public record PaymentsStatusDto(String provider, String mode, boolean webhookConfigured) {}
+
     // ---- Negocio: Datos de negocio (panel e informes) ----
     public record FinanceKpisDto(BigDecimal totalSold, BigDecimal subscriptionSales, BigDecimal productSales, BigDecimal receiptsCreated, BigDecimal voidedAmount) {}
     public record SubscriptionDayDto(LocalDate date, BigDecimal newSales, BigDecimal renewals, BigDecimal voided) {}
