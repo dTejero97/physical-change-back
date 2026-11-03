@@ -11,7 +11,9 @@ import com.physicalchange.payment.PaymentProvider.Mode;
 import com.physicalchange.repository.*;
 import com.physicalchange.security.AccessService;
 import com.physicalchange.security.AuthUser;
+import com.physicalchange.security.RateLimiter;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -33,6 +35,11 @@ public class OnlinePaymentService {
     static final Duration CHECKOUT_TTL = Duration.ofHours(1);
     /** Importe mínimo que acepta Stripe en euros. */
     static final BigDecimal MIN_AMOUNT = new BigDecimal("0.50");
+    /** Sesiones de Checkout por cliente cada 10 minutos (T130: cada una crea objetos en Stripe y consume su cuota de API). */
+    static final int CHECKOUTS_PER_WINDOW = 10;
+    static final long CHECKOUT_WINDOW_MS = 10 * 60_000L;
+
+    private final RateLimiter checkoutLimiter = new RateLimiter();
 
     private final PaymentProvider payments;
     private final PurchaseOrderRepository orders;
@@ -61,7 +68,7 @@ public class OnlinePaymentService {
     @Transactional
     public CheckoutDto payReceipt(Long receiptId) {
         requireEnabled();
-        AppUser me = client();
+        AppUser me = lockedClient();
         Receipt x = receipts.findById(receiptId).filter(r -> r.getClientId().equals(me.getId()))
                 .orElseThrow(() -> new NotFoundException("Comprobante no encontrado"));
         if (!"PENDING".equals(x.getStatus())) throw new ConflictException("Este comprobante ya no está pendiente");
@@ -93,7 +100,7 @@ public class OnlinePaymentService {
     @Transactional
     public CheckoutDto subscribe(Long planId) {
         requireEnabled();
-        AppUser me = client();
+        AppUser me = lockedClient();
         SubscriptionPlan plan = plans.findById(planId)
                 .filter(p -> !p.isArchived() && "ALL".equals(p.getVisibility()) && owners(me).contains(p.getTrainerId()))
                 .orElseThrow(() -> new NotFoundException("Plan no encontrado"));
@@ -114,9 +121,10 @@ public class OnlinePaymentService {
         List<PurchaseOrder> list = orders.findByClientIdOrderByCreatedAtDesc(me.getId());
         Map<Long, String> planNames = plans.findAllById(list.stream().map(PurchaseOrder::getPlanId).filter(Objects::nonNull).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(SubscriptionPlan::getId, SubscriptionPlan::getName));
+        LocalDateTime now = LocalDateTime.now(clock);
         return list.stream().map(o -> new OrderDto(o.getId(), o.getKind(),
                 "PLAN".equals(o.getKind()) ? planNames.getOrDefault(o.getPlanId(), "Plan") : "Comprobante PC-" + o.getReceiptId(),
-                o.getAmount(), o.getStatus(), o.getReceiptId(), o.getPlanId(), o.getCreatedAt(), o.getPaidAt())).toList();
+                o.getAmount(), shownStatus(o, now), o.getReceiptId(), o.getPlanId(), o.getCreatedAt(), o.getPaidAt())).toList();
     }
 
     /** Un pedido propio (para la vuelta de Checkout: el estado real lo pone el webhook). Ajeno → 404. */
@@ -147,6 +155,24 @@ public class OnlinePaymentService {
         return new PortalDto(payments.createPortalSession(me.getStripeCustomerId(), publicUrl + "/payments"));
     }
 
+    /**
+     * T130: si el profesional marca pagado o anula un comprobante con una sesión de Checkout abierta, se cierra en Stripe
+     * para que el cliente no lo pague dos veces. También salta al cobrarlo por Stripe: cierra las demás sesiones abiertas.
+     * Va en la transacción que cambia el comprobante.
+     */
+    @EventListener
+    public void onReceiptPaid(ReceiptEvents.ReceiptPaidEvent ev) { closeOpenOrders(ev.receiptId()); }
+
+    @EventListener
+    public void onReceiptVoided(ReceiptEvents.ReceiptVoidedEvent ev) { closeOpenOrders(ev.receiptId()); }
+
+    private void closeOpenOrders(Long receiptId) {
+        for (PurchaseOrder o : orders.findByReceiptIdAndStatus(receiptId, "PENDING")) {
+            if (payments.enabled()) close(o);
+            else o.setStatus("EXPIRED");
+        }
+    }
+
     // ---------- internos ----------
 
     private void requireEnabled() { if (!payments.enabled()) throw PaymentException.disabled(); }
@@ -155,6 +181,23 @@ public class OnlinePaymentService {
         AuthUser a = access.current();
         if (a.role() != Role.CLIENT) throw new ForbiddenException("Solo para clientes");
         return users.findById(a.id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+    }
+
+    /**
+     * Cliente con su fila bloqueada hasta el final de la transacción (T130): dos peticiones de pago simultáneas del mismo
+     * cliente se atienden de una en una, así la segunda ve y cierra la sesión de la primera y no se crean dos clientes de Stripe.
+     */
+    private AppUser lockedClient() {
+        AuthUser a = access.current();
+        if (a.role() != Role.CLIENT) throw new ForbiddenException("Solo para clientes");
+        long wait = checkoutLimiter.hit("checkout:" + a.id(), CHECKOUTS_PER_WINDOW, CHECKOUT_WINDOW_MS);
+        if (wait > 0) throw new TooManyRequestsException("Demasiados intentos de pago. Inténtalo dentro de unos minutos", wait);
+        return users.lockById(a.id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+    }
+
+    /** Un pedido pendiente cuya sesión ya ha caducado se muestra caducado aunque el evento de Stripe no haya llegado. */
+    private static String shownStatus(PurchaseOrder o, LocalDateTime now) {
+        return "PENDING".equals(o.getStatus()) && o.getExpiresAt().isBefore(now) ? "EXPIRED" : o.getStatus();
     }
 
     /** Profesional del cliente; sin entrenador, los ADMIN (misma regla que ClientDirectory.canBookWith). */
