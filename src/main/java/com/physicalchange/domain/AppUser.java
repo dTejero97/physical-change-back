@@ -22,6 +22,8 @@ public class AppUser {
     @Column(name = "NUTRITIONIST_ID") private Long nutritionistId;
     /** Sube al desactivar, cambiar la contraseña o cerrar sesión: invalida los JWT emitidos antes (T141). */
     @Column(name = "TOKEN_VERSION", nullable = false) private Integer tokenVersion = 0;
+    /** Cliente de Stripe (cus_…), creado en su primer pago y reutilizado en el portal (ADR-009, V20). */
+    @Column(name = "STRIPE_CUSTOMER_ID", unique = true, length = 255) private String stripeCustomerId;
 
     public Long getId() { return id; }
     public String getEmail() { return email; }
@@ -52,4 +54,6 @@ public class AppUser {
     public void setTrainingEnabled(boolean t) { this.trainingEnabled = t ? 1 : 0; }
     public Long getNutritionistId() { return nutritionistId; }
     public void setNutritionistId(Long id) { this.nutritionistId = id; }
+    public String getStripeCustomerId() { return stripeCustomerId; }
+    public void setStripeCustomerId(String id) { this.stripeCustomerId = id; }
 }

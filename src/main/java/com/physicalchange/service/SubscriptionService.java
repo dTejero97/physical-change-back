@@ -8,6 +8,8 @@ import com.physicalchange.security.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import com.physicalchange.payment.PaymentProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,9 +41,14 @@ public class SubscriptionService {
     private final ClientProfileService profiles;
     private final AccessService access;
 
+    private final PaymentProvider payments;
+    private final ApplicationEventPublisher events;
+
     public SubscriptionService(ClientSubscriptionRepository s, SubscriptionPlanRepository p, CouponRepository c, ReceiptRepository r,
-                               ReceiptLineRepository l, UserRepository u, ClientDirectory d, ClientProfileService pr, AccessService a) {
+                               ReceiptLineRepository l, UserRepository u, ClientDirectory d, ClientProfileService pr, AccessService a,
+                               PaymentProvider pay, ApplicationEventPublisher ev) {
         subscriptions = s; plans = p; coupons = c; receipts = r; lines = l; users = u; directory = d; profiles = pr; access = a;
+        payments = pay; events = ev;
     }
 
     @Transactional(readOnly = true)
@@ -78,7 +85,9 @@ public class SubscriptionService {
     public SubscriptionDto cancel(Long id) {
         ClientSubscription s = subscriptions.findById(id).filter(x -> x.getTrainerId().equals(access.current().id()))
                 .orElseThrow(() -> new NotFoundException("Suscripción no encontrada"));
-        if (!"ACTIVE".equals(s.getStatus())) throw new ConflictException("La suscripción ya está cancelada");
+        if ("CANCELLED".equals(s.getStatus())) throw new ConflictException("La suscripción ya está cancelada");
+        // Cobrada por Stripe: primero se deja de cobrar allí; si Stripe falla, no se marca como cancelada.
+        if (s.getStripeSubscriptionId() != null) payments.cancelSubscription(s.getStripeSubscriptionId());
         s.setStatus("CANCELLED");
         s.setCancelledAt(LocalDateTime.now());
         return toDtos(List.of(s)).get(0);
@@ -112,11 +121,41 @@ public class SubscriptionService {
         if (n > 0) log.info("Suscripciones: {} comprobantes pendientes emitidos al arrancar", n);
     }
 
+    // ---------- Stripe (solo desde el webhook firmado, ADR-009 §6) ----------
+
+    /** Plan contratado y primer periodo cobrado: suscripción ligada a Stripe y su primer comprobante PAID. */
+    @Transactional
+    public ClientSubscription startFromStripe(Long trainerId, Long clientId, SubscriptionPlan plan, BigDecimal price, String stripeSubscriptionId) {
+        ClientSubscription s = start(trainerId, clientId, plan, LocalDate.now(), null);
+        s.setPrice(price);
+        s.setStripeSubscriptionId(stripeSubscriptionId);
+        paidPeriodFromStripe(s);
+        return s;
+    }
+
+    /**
+     * Un periodo cobrado por Stripe (alta o renovación): comprobante PAID con método STRIPE del periodo que empieza en
+     * nextPeriodStart y avance al siguiente. Idempotente por (suscripción, inicio de periodo). Devuelve false si ya existía.
+     */
+    @Transactional
+    public boolean paidPeriodFromStripe(ClientSubscription s) {
+        SubscriptionPlan plan = plans.findById(s.getPlanId()).orElseThrow(() -> new NotFoundException("Plan no encontrado"));
+        LocalDate start = s.getNextPeriodStart(), next = advance(start, plan.getFrequency());
+        s.setNextPeriodStart(next);
+        if (receipts.existsBySubscriptionIdAndPeriodStart(s.getId(), start)) return false;
+        Receipt x = issue(s, plan, null, start, next.minusDays(1));
+        x.setStatus("PAID");
+        x.setPaidDate(LocalDate.now());
+        x.setMethod("STRIPE");
+        events.publishEvent(new ReceiptEvents.ReceiptPaidEvent(x.getId()));
+        return true;
+    }
+
     // ---------- internos ----------
 
     private ClientSubscription start(Long trainerId, Long clientId, SubscriptionPlan plan, LocalDate startDate, Long couponId) {
         if (plan.isArchived()) throw new ConflictException("El plan está archivado");
-        if (subscriptions.existsByClientIdAndPlanIdAndStatus(clientId, plan.getId(), "ACTIVE"))
+        if (subscriptions.existsByClientIdAndPlanIdAndStatusIn(clientId, plan.getId(), List.of("ACTIVE", "PAST_DUE")))
             throw new ConflictException("El cliente ya tiene este plan activo");
         ClientSubscription s = new ClientSubscription();
         s.setTrainerId(trainerId);
@@ -135,7 +174,8 @@ public class SubscriptionService {
     /** Emite los periodos vencidos. Devuelve cuántos comprobantes ha creado. */
     private int catchUp(ClientSubscription s) {
         SubscriptionPlan plan = plans.findById(s.getPlanId()).orElse(null);
-        if (plan == null) return 0;
+        // Cobrada por Stripe: cada periodo llega PAID por webhook; aquí no se emiten pendientes.
+        if (plan == null || s.getStripeSubscriptionId() != null) return 0;
         Coupon coupon = s.getCouponId() == null ? null : coupons.findById(s.getCouponId()).orElse(null);
         LocalDate today = LocalDate.now();
         int created = 0;
@@ -150,7 +190,7 @@ public class SubscriptionService {
         return created;
     }
 
-    private void issue(ClientSubscription s, SubscriptionPlan plan, Coupon coupon, LocalDate start, LocalDate end) {
+    private Receipt issue(ClientSubscription s, SubscriptionPlan plan, Coupon coupon, LocalDate start, LocalDate end) {
         BigDecimal price = s.getPrice();
         BigDecimal discount = BigDecimal.ZERO;
         Receipt x = new Receipt();
@@ -189,6 +229,7 @@ public class SubscriptionService {
         l.setTaxRate(plan.getTaxRate());
         l.setLineTotal(price);
         lines.save(l);
+        return x;
     }
 
     static LocalDate advance(LocalDate d, String frequency) {
