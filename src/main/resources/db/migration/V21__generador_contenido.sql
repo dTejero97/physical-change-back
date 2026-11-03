@@ -1,8 +1,8 @@
 -- =====================================================================
--- Physical Change · V15 · Generador de contenido: cuentas sociales, OAuth, ideas, ganchos y copys,
+-- Physical Change · V21 · Generador de contenido: cuentas sociales, OAuth, ideas, ganchos y copys,
 -- colecciones, publicaciones por red, métricas y banco semilla (PostgreSQL 16) — Fase 8, T189.
 -- Decisión: docs/adr/ADR-014-conectores-sociales.md (raíz del proyecto) · Contrato: docs/api-contenido.md §10
--- No editar una vez desplegado. Stripe (T127) pasa a V16.
+-- No editar una vez desplegado. Renumerada de V15 a V21 al integrarla (2026-11-03): producción ya estaba en V20 (Stripe).
 --
 -- Notas:
 --   * TIMESTAMPTZ (nuevo en el esquema): instantes en UTC sin depender de la zona de la JVM (job de publicación).
@@ -22,7 +22,7 @@
 --   DELETE FROM ai_usage WHERE kind IN ('CONTENT_IDEA', 'CONTENT_HOOK', 'CONTENT_COPY');
 --   ALTER TABLE ai_usage DROP CONSTRAINT ai_usage_kind_check;
 --   ALTER TABLE ai_usage ADD CONSTRAINT ai_usage_kind_check CHECK (kind IN ('WORKOUT', 'PROGRAM', 'DAILY_PLAN', 'RECIPE', 'CHAT'));
---   DELETE FROM flyway_schema_history WHERE version = '15';
+--   DELETE FROM flyway_schema_history WHERE version = '21';
 -- =====================================================================
 
 -- ---------- Cambios en tablas existentes ----------

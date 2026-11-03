@@ -1,6 +1,6 @@
 # API · Generador de contenido (Marketing)
 
-Versión 1.1.0 · 2026-11-01 · Tarea T187, ampliado en T190 (implementa T190; permiso del colaborador T198) · Decisión: `docs/adr/ADR-014-conectores-sociales.md` (raíz del proyecto) · Especificación: `docs/fase8-generador-contenido.md` (raíz) · Migración: `V15` (T189, borrador en §10)
+Versión 1.1.0 · 2026-11-01 · Tarea T187, ampliado en T190 (implementa T190; permiso del colaborador T198) · Decisión: `docs/adr/ADR-014-conectores-sociales.md` (raíz del proyecto) · Especificación: `docs/fase8-generador-contenido.md` (raíz) · Migración: `V21__generador_contenido.sql` (T189; era V15, renumerada al integrarla el 2026-11-03 porque producción ya está en V20)
 
 ## 0. Reglas comunes
 - Todas las rutas exigen JWT y cuelgan de `/api/content`. Swagger: grupo "Contenido".

@@ -17,7 +17,7 @@ public class TeamMember {
     @Column(name = "CAN_ASSIGN_ROUTINES", nullable = false) private boolean canAssignRoutines;
     @Column(name = "CAN_MANAGE_APPOINTMENTS", nullable = false) private boolean canManageAppointments;
     @Column(name = "CAN_MESSAGE_CLIENTS", nullable = false) private boolean canMessageClients;
-    /** Generador de contenido (V15, ADR-014 §9). Lo cambia solo el profesional (endpoint en T198). */
+    /** Generador de contenido (V21, ADR-014 §9). Lo cambia solo el profesional (endpoint en T198). */
     @Column(name = "CAN_USE_CONTENT", nullable = false) private boolean canUseContent;
 
     @ElementCollection

@@ -21,7 +21,7 @@ public class NotificationService {
     public static final String ACHIEVEMENT_UNLOCKED = "ACHIEVEMENT_UNLOCKED";
     public static final String ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED";
     public static final String ONBOARDING_UPDATE_REQUESTED = "ONBOARDING_UPDATE_REQUESTED";
-    /** Generador de contenido (ADR-014 §5-§6, V15). */
+    /** Generador de contenido (ADR-014 §5-§6, V21). */
     public static final String CONTENT_POST_DUE = "CONTENT_POST_DUE";
     public static final String CONTENT_POST_FAILED = "CONTENT_POST_FAILED";
     public static final String SOCIAL_ACCOUNT_ATTENTION = "SOCIAL_ACCOUNT_ATTENTION";
