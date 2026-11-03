@@ -126,7 +126,7 @@ public class AiService {
         usage.save(u);
     }
 
-    private void checkCredits(Long me, int cost) {
+    void checkCredits(Long me, int cost) {
         AiCreditsDto c = credits(me);
         if (c.used() + cost > c.total()) throw new AiException(402, "Has usado tus " + c.total() + " créditos de este mes");
     }
@@ -135,7 +135,7 @@ public class AiService {
      * Dentro de la transacción que guarda el borrador: bloquea al profesional y vuelve a comprobar los créditos, para que
      * varias generaciones simultáneas no gasten más de los que tiene (Nota de Seguridad T83). Si ya no hay, 402 y no se guarda nada.
      */
-    private void chargeable(Long me, int cost) {
+    void chargeable(Long me, int cost) {
         users.lockById(me);
         checkCredits(me, cost);
     }
@@ -306,7 +306,7 @@ public class AiService {
     record Generated(JsonNode node, AiProvider.Completion completion) {}
 
     /** Pide JSON; si no es válido, reintenta una vez pidiendo que lo corrija; si vuelve a fallar, 422 (no se cobra). */
-    private Generated generate(String system, String user, String schema, int maxTokens, java.util.function.Predicate<JsonNode> shapeOk) {
+    Generated generate(String system, String user, String schema, int maxTokens, java.util.function.Predicate<JsonNode> shapeOk) {
         List<AiProvider.Turn> turns = new ArrayList<>(List.of(new AiProvider.Turn("user", user)));
         int in = 0, out = 0;
         for (int attempt = 0; attempt < 2; attempt++) {

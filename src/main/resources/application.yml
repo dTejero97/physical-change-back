@@ -62,6 +62,12 @@ app:
     chat-daily-limit: ${AI_CHAT_DAILY_LIMIT:30}
     neurons-per-m-input: ${AI_NEURONS_PER_M_INPUT:26668}     # tabla de precios del modelo 70B (ADR-003)
     neurons-per-m-output: ${AI_NEURONS_PER_M_OUTPUT:204805}
+  social:                                   # Generador de contenido (ADR-014 §2)
+    token-key: ${SOCIAL_TOKEN_KEY:}         # secreto: AES-256 en base64 (openssl rand -base64 32); vacío = las 8 redes NOT_CONFIGURED
+    token-key-previous: ${SOCIAL_TOKEN_KEY_PREVIOUS:}   # solo durante una rotación de la clave
+  content:
+    scheduler-enabled: ${CONTENT_SCHEDULER_ENABLED:true}   # job de publicación programada (cada minuto) y métricas (cada hora)
+    process-on-read: true                   # también al consultar Inicio, calendario o avisos (Render gratuito se duerme)
   admin:
     email: ${ADMIN_USER:admin}          # usuario de acceso del administrador
     password: ${ADMIN_PASSWORD:admin}   # se aplica solo al crear el admin por primera vez

@@ -41,6 +41,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/clients", "/api/clients/profiles", "/api/clients/{id}", "/api/clients/{id}/assignments")
                     .hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 .requestMatchers("/api/workouts/**").hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
+                // Generador de contenido (ADR-014 §9): el servicio exige al colaborador el permiso can_use_content;
+                // gestionar cuentas y la IA quedan solo para ADMIN y TRAINER (@PreAuthorize en los controladores).
+                .requestMatchers("/api/content/**").hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 .requestMatchers("/api/clients/**", "/api/reports/**", "/api/library/**", "/api/files/**").hasAnyRole("ADMIN", "TRAINER")
                 // Fondos de la página de carga (T208, docs/api-fondos.md): galería solo ADMIN y TRAINER (L-04: ni colaborador ni cliente).
                 // La lectura pública vive en /api/public/backgrounds/** (ya incluida en /api/public/**: el fondo activo y los iniciales,
