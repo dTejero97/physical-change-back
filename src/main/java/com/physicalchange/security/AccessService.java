@@ -61,18 +61,33 @@ public class AccessService {
 
     // ---------- Responsables de entrenamiento y de nutrición (ADR-013) ----------
 
-    /** Responsable de nutrición vigente: su nutricionista (si sigue ofreciendo nutrición) o, si no tiene, su entrenador si la ofrece. */
+    /**
+     * Responsable de nutrición vigente: su nutricionista (si sigue ofreciendo nutrición) o, si no tiene, su entrenador si la
+     * ofrece. El ADMIN también es profesional (T226): cuenta igual que un TRAINER si tiene el servicio activado.
+     */
     public Long nutritionResponsibleOf(AppUser client) {
-        Long id = client.getNutritionistId() != null ? client.getNutritionistId() : client.getTrainerId();
+        Long id = client.getNutritionistId() != null ? client.getNutritionistId() : ownerOf(client);
         if (id == null) return null;
-        return users.findById(id).filter(p -> p.getRole() == Role.TRAINER && p.isActive() && p.isNutritionEnabled()).map(AppUser::getId).orElse(null);
+        return users.findById(id).filter(p -> isProfessional(p) && p.isActive() && p.isNutritionEnabled()).map(AppUser::getId).orElse(null);
     }
 
-    /** Responsable de entrenamiento: su entrenador, si ofrece entrenamiento. */
+    /** Responsable de entrenamiento: su entrenador (o el ADMIN si no tiene, T225), si ofrece entrenamiento. */
     public Long trainingResponsibleOf(AppUser client) {
-        if (client.getTrainerId() == null) return null;
-        return users.findById(client.getTrainerId()).filter(AppUser::isTrainingEnabled).map(AppUser::getId).orElse(null);
+        Long id = ownerOf(client);
+        if (id == null) return null;
+        return users.findById(id).filter(p -> isProfessional(p) && p.isActive() && p.isTrainingEnabled()).map(AppUser::getId).orElse(null);
     }
+
+    /**
+     * Profesional que atiende al cliente: su entrenador o, si no tiene (lo dio de alta el ADMIN), el ADMIN. Misma regla que
+     * ClientDirectory.canBookWith. Con varios ADMIN, el más antiguo.
+     */
+    private Long ownerOf(AppUser client) {
+        if (client.getTrainerId() != null) return client.getTrainerId();
+        return users.findByRole(Role.ADMIN).stream().filter(AppUser::isActive).map(AppUser::getId).min(Long::compare).orElse(null);
+    }
+
+    private static boolean isProfessional(AppUser u) { return u.getRole() == Role.TRAINER || u.getRole() == Role.ADMIN; }
 
     /** Cambiar la nutrición de un cliente: ADMIN o su responsable de nutrición vigente. Nadie más, tampoco su entrenador si no lo es. */
     public void assertNutritionResponsible(Long clientId) {

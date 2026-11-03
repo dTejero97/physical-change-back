@@ -62,7 +62,7 @@ public class ClientService {
         if (me.role() != Role.ADMIN) throw new ForbiddenException("Solo el administrador asigna el responsable de nutrición");
         AppUser c = users.findById(id).filter(u -> u.getRole() == Role.CLIENT).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
         if (r.nutritionistId() != null) {
-            users.findById(r.nutritionistId()).filter(p -> p.getRole() == Role.TRAINER && p.isActive() && p.isNutritionEnabled())
+            users.findById(r.nutritionistId()).filter(p -> (p.getRole() == Role.TRAINER || p.getRole() == Role.ADMIN) && p.isActive() && p.isNutritionEnabled())
                     .orElseThrow(() -> new BadRequestException("El profesional elegido no ofrece nutrición"));
         }
         c.setNutritionistId(r.nutritionistId());

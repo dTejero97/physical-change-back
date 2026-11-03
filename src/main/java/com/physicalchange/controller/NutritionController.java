@@ -16,7 +16,7 @@ public class NutritionController {
     public NutritionController(NutritionService s) { svc = s; }
 
     /** El entrenador activa o desactiva el servicio de nutrición. */
-    @PutMapping("/service") @PreAuthorize("hasRole('TRAINER')")
+    @PutMapping("/service") @PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
     public NutritionServiceRequest service(@Valid @RequestBody NutritionServiceRequest r) { return svc.setService(r.enabled()); }
 
     /** Clientes de los que soy responsable de nutrición (ADR-013). */

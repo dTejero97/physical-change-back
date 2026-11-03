@@ -28,7 +28,8 @@ public class NutritionService {
     @Transactional
     public NutritionServiceRequest setService(boolean enabled) {
         AppUser me = users.findById(access.current().id()).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
-        if (me.getRole() != Role.TRAINER) throw new ForbiddenException("Solo un entrenador puede activar el servicio");
+        // El ADMIN también es profesional (T226).
+        if (me.getRole() != Role.TRAINER && me.getRole() != Role.ADMIN) throw new ForbiddenException("Solo un profesional puede activar el servicio");
         if (!enabled && !me.isTrainingEnabled()) throw new BadRequestException("Ofrece al menos entrenamiento o nutrición");
         me.setNutritionEnabled(enabled);
         return new NutritionServiceRequest(enabled);
@@ -68,10 +69,14 @@ public class NutritionService {
                 .filter(c -> me.equals(access.nutritionResponsibleOf(c))).map(AuthService::toDto).toList();
     }
 
-    /** Profesionales activos y sus servicios (para el ADMIN): solo los que ofrecen nutrición se pueden asignar como nutricionistas. */
+    /**
+     * Profesionales activos y sus servicios (para el ADMIN): solo los que ofrecen nutrición se pueden asignar como nutricionistas.
+     * Incluye a los ADMIN, que también atienden clientes (T226).
+     */
     @Transactional(readOnly = true)
     public List<ProfessionalDto> professionals() {
-        return users.findByRole(Role.TRAINER).stream().filter(AppUser::isActive).sorted(Comparator.comparing(AppUser::getFullName))
+        return java.util.stream.Stream.concat(users.findByRole(Role.ADMIN).stream(), users.findByRole(Role.TRAINER).stream())
+                .filter(AppUser::isActive).sorted(Comparator.comparing(AppUser::getFullName))
                 .map(u -> new ProfessionalDto(u.getId(), u.getFullName(), u.isTrainingEnabled(), u.isNutritionEnabled())).toList();
     }
 

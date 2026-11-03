@@ -24,7 +24,7 @@ public class AuthController {
     @PutMapping("/me") public UserDto updateMe(@Valid @RequestBody UpdateProfileRequest r) { return auth.updateProfile(r); }
 
     /** Configuración del profesional: servicios que ofrece (ADR-013). */
-    @PutMapping("/me/services") @org.springframework.security.access.prepost.PreAuthorize("hasRole('TRAINER')")
+    @PutMapping("/me/services") @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
     public UserDto updateServices(@RequestBody ServicesRequest r) { return auth.updateServices(r); }
 
     /** Configuración: cambiar la contraseña (requiere la actual). */
