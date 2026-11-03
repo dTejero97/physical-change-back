@@ -51,3 +51,10 @@ services:
         sync: false
       - key: MAIL_SUPPORT          # p. ej. soporte@phisicalchange.com
         sync: false
+      # ---- Cobros con Stripe (T128/T131, README-STRIPE.md y MANUAL-DESPLIEGUE.md Parte 11) ----
+      - key: PAYMENTS_PROVIDER     # none (por defecto, pagos apagados) | stripe: exige las dos claves siguientes
+        sync: false
+      - key: STRIPE_SECRET_KEY     # secreto: sk_test_… en pruebas, sk_live_… en real (nunca la pk_…)
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET # secreto: whsec_… del webhook /api/public/stripe/webhook
+        sync: false
