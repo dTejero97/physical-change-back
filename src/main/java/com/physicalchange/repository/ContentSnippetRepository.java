@@ -16,10 +16,11 @@ public interface ContentSnippetRepository extends JpaRepository<ContentSnippet, 
            "and (cast(:theme as String) is null or lower(s.theme) = lower(cast(:theme as String))) " +
            "and (cast(:tag as String) is null or lower(concat(',', coalesce(s.tags, ''), ',')) like cast(:tag as String)) " +
            "and (cast(:q as String) is null or lower(s.text) like cast(:q as String) or lower(coalesce(s.cta, '')) like cast(:q as String)) " +
-           "and (cast(:favorite as Boolean) is null or s.favorite = cast(:favorite as Boolean))")
+           "and (:anyFavorite = true or s.favorite = :favorite)")
     Page<ContentSnippet> search(@Param("kind") String kind, @Param("bank") boolean bank, @Param("owner") Long owner,
                                 @Param("network") String network, @Param("objective") String objective, @Param("theme") String theme,
-                                @Param("tag") String tag, @Param("q") String q, @Param("favorite") Boolean favorite, Pageable p);
+                                @Param("tag") String tag, @Param("q") String q, @Param("anyFavorite") boolean anyFavorite,
+                                @Param("favorite") boolean favorite, Pageable p);
 
     Optional<ContentSnippet> findByOwnerIdAndSourceId(Long ownerId, Long sourceId);
 

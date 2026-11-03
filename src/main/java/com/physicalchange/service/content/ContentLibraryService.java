@@ -48,7 +48,8 @@ public class ContentLibraryService {
         Long owner = support.workspace();
         boolean bank = bankScope(scope);
         return ideas.search(bank, owner, blank(format), blank(objective), blank(theme), ContentSupport.tagLike(tag),
-                ContentSupport.like(cutQ(q)), favorite, used, sorted(page)).map(ContentSupport::idea);
+                ContentSupport.like(cutQ(q)), favorite == null, Boolean.TRUE.equals(favorite), used == null, Boolean.TRUE.equals(used),
+                sorted(page)).map(ContentSupport::idea);
     }
 
     @Transactional(readOnly = true)
@@ -145,7 +146,8 @@ public class ContentLibraryService {
                                                 String q, Boolean favorite, Pageable page) {
         Long owner = support.workspace();
         return snippets.search(kind, bankScope(scope), owner, HOOK.equals(kind) ? null : blank(network), blank(objective), blank(theme),
-                ContentSupport.tagLike(tag), ContentSupport.like(cutQ(q)), favorite, sorted(page)).map(ContentSupport::snippet);
+                ContentSupport.tagLike(tag), ContentSupport.like(cutQ(q)), favorite == null, Boolean.TRUE.equals(favorite), sorted(page))
+                .map(ContentSupport::snippet);
     }
 
     @Transactional(readOnly = true)
