@@ -67,6 +67,14 @@ class AdminProfessionalTest {
         send("PUT", "/api/clients/" + clientId + "/nutritionist", adminAuth, "{\"nutritionistId\":" + admin.getId() + "}", 200);
     }
 
+    @Test void clienteDelAdminLeTieneComoEntrenadorYLePuedeEscribir() throws Exception {
+        long clientId = newClient();
+        assertEquals(admin.getId(), users.findById(clientId).orElseThrow().getTrainerId());   // T227: antes NULL
+        String client = token(clientId, Role.CLIENT);
+        assertEquals(admin.getId(), send("GET", "/api/auth/me", client, null, 200).get("trainerId").asLong());
+        send("POST", "/api/messages", client, "{\"recipientId\":" + admin.getId() + ",\"body\":\"Hola\"}", 201);
+    }
+
     @Test void unClienteNoPuedeActivarServicios() throws Exception {
         String client = token(newClient(), Role.CLIENT);
         send("PUT", "/api/nutrition/service", client, "{\"enabled\":true}", 403);

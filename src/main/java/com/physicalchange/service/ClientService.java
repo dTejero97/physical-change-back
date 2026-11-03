@@ -77,7 +77,8 @@ public class ClientService {
         AppUser u = new AppUser();
         u.setEmail(r.email().toLowerCase()); u.setFullName(r.fullName());
         u.setPasswordHash(enc.encode(r.password())); u.setRole(Role.CLIENT);
-        u.setTrainerId(me.role() == Role.TRAINER ? me.id() : null);
+        // El ADMIN también es profesional: sus clientes le tienen como entrenador (T227; antes quedaba NULL).
+        u.setTrainerId(me.role() == Role.TRAINER || me.role() == Role.ADMIN ? me.id() : null);
         u = users.save(u);
         profiles.onClientCreated(u.getId(), u.getTrainerId(), r.tagIds(), null);
         return AuthService.toDto(u);
