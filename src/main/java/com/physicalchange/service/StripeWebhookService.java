@@ -48,6 +48,11 @@ public class StripeWebhookService {
     public void apply(JsonNode event) {
         String id = event.path("id").asText(""), type = event.path("type").asText("");
         if (id.isEmpty() || events.existsById(id)) return;
+        // T130: un evento de pruebas nunca cobra en real ni al revés (defensa extra además de la firma por endpoint).
+        if (event.has("livemode") && event.path("livemode").asBoolean() != "LIVE".equals(payments.mode())) {
+            log.warn("Stripe: evento {} ignorado: su modo (livemode={}) no coincide con la clave ({})", id, event.path("livemode").asBoolean(), payments.mode());
+            return;
+        }
         events.save(new StripeEvent(id, truncate(type, 80)));
         JsonNode obj = event.path("data").path("object");
         log.info("Stripe: evento {} ({})", type, id);
@@ -128,6 +133,10 @@ public class StripeWebhookService {
                 log.warn("Stripe: cobro de la suscripción {} ya cancelada; revisar en Stripe", s.getId());
                 return;
             }
+            long paid = invoice.path("amount_paid").asLong(-1);
+            if (paid >= 0 && paid != OnlinePaymentService.cents(s.getPrice()))
+                log.warn("Stripe: la renovación de la suscripción {} cobra {} céntimos y el precio guardado es {}; revisar en Stripe",
+                        s.getId(), paid, s.getPrice());
             s.setStatus("ACTIVE");
             subscriptionService.paidPeriodFromStripe(s);
         });

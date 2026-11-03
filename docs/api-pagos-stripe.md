@@ -1,6 +1,6 @@
 # API Pagos con Stripe (T126, T128) — contrato
 
-Versión 0.2.0 · 2026-11-03 · Decisión: `../docs/adr/ADR-009-stripe.md` · Migración: **V20** (`V20__pagos_stripe.sql`)
+Versión 0.3.0 · 2026-11-03 (0.3.0: endurecimiento de T130) · Decisión: `../docs/adr/ADR-009-stripe.md` · Migración: **V20** (`V20__pagos_stripe.sql`)
 
 Alcance de esta versión (decisión del usuario 2026-11-03): el **cliente con sesión** (1) paga con tarjeta sus comprobantes pendientes y (2) contrata un plan de su profesional con **renovación automática**. El catálogo público y el registro durante la contratación (`access_status`, `POST /api/public/checkout`) quedan para **T143**.
 
@@ -28,7 +28,10 @@ Cambios respecto a 0.1.0: no hay `stripe_price_id` (cada sesión lleva `price_da
 
 Reglas:
 - El navegador solo envía ids. El importe sale del comprobante (`total`) o del plan (`price`) guardados.
-- Una sola sesión abierta por comprobante (o por cliente y plan): al pedir otra, la anterior se caduca en Stripe y su pedido pasa a `EXPIRED`.
+- Una sola sesión abierta por comprobante (o por cliente y plan): al pedir otra, la anterior se caduca en Stripe y su pedido pasa a `EXPIRED`. Las peticiones de pago de un mismo cliente se atienden de una en una (bloqueo de su fila).
+- Si el profesional marca pagado o anula un comprobante, sus sesiones abiertas se caducan en Stripe y sus pedidos pasan a `EXPIRED`.
+- Límite: 10 sesiones de pago por cliente cada 10 minutos → 429 con `Retry-After`.
+- Un pedido `PENDING` cuya sesión ya ha caducado se devuelve como `EXPIRED` aunque no haya llegado el evento.
 - La sesión dura 1 hora. `success_url` = `{PUBLIC_APP_URL}/payments?pago=ok&pedido={orderId}`, `cancel_url` = `…?pago=cancelado&pedido={orderId}`. Son solo informativas.
 - El cliente de Stripe (`cus_…`) se crea en el primer pago y se guarda en `app_user.stripe_customer_id`.
 - Frecuencia → `recurring`: WEEKLY = week×1, MONTHLY = month×1, QUARTERLY = month×3, SEMIANNUAL = month×6, ANNUAL = year×1.
@@ -45,9 +48,9 @@ Las suscripciones de Stripe **no generan comprobantes pendientes** en la puesta 
 ## Webhook (público; la firma es la autenticación)
 | Método | Ruta | Respuesta |
 |---|---|---|
-| POST | `/api/public/stripe/webhook` | 200 al aplicar el efecto (o si el evento ya se aplicó); 400 sin cuerpo si la firma falta, está caducada (> 5 min) o no coincide; 500 si falla algo y Stripe debe reintentar |
+| POST | `/api/public/stripe/webhook` | 200 al aplicar el efecto (o si el evento ya se aplicó, o es de otro modo); 400 sin cuerpo si la firma falta, está caducada (> 5 min) o no coincide; 413 si el cuerpo pasa de 1 MB; 500 si falla algo y Stripe debe reintentar |
 
-Firma: `Stripe-Signature: t=…,v1=…`; HMAC-SHA256 con el secreto sobre `t + "." + cuerpo en bruto`, comparación en tiempo constante, se acepta cualquier `v1` (rotación). Idempotencia por `event.id` en `stripe_event`, en la misma transacción que el efecto.
+Un evento cuyo `livemode` no coincide con la clave (test frente a real) se ignora sin efecto. Firma: `Stripe-Signature: t=…,v1=…`; HMAC-SHA256 con el secreto sobre `t + "." + cuerpo en bruto`, comparación en tiempo constante, se acepta cualquier `v1` (rotación). Idempotencia por `event.id` en `stripe_event`, en la misma transacción que el efecto.
 
 Eventos que hay que activar en el endpoint de Stripe:
 
@@ -74,4 +77,4 @@ Casos raros (se registran en el log con nivel WARN para revisarlos en Stripe):
 - T143: catálogo público y registro durante el pago (`access_status = PENDING_PAYMENT`).
 - Cupones en el pago online.
 - Reembolsos de renovaciones y reembolsos parciales: hoy se anulan a mano.
-- Activar en Stripe el Customer Portal (Settings → Billing → Customer portal) antes de usar `/api/me/billing-portal` (T131/T138).
+- Activar en Stripe el Customer Portal (Settings → Billing → Customer portal) antes de usar `/api/me/billing-portal` (T131/T138), con: actualizar tarjeta y ver facturas **sí**; cancelar **al final del periodo**; **sin** cambiar de plan ni de cantidad (el precio lo decide el servidor). Crear el endpoint del webhook con la versión de API fijada y solo los 9 eventos de la tabla.

@@ -17,6 +17,7 @@ import java.util.List;
 @RestController @Tag(name = "Pagos online")
 public class OnlinePaymentController {
     private static final Logger log = LoggerFactory.getLogger(OnlinePaymentController.class);
+    static final int MAX_WEBHOOK_BYTES = 1024 * 1024;
     private final OnlinePaymentService svc;
     private final StripeWebhookService webhook;
     public OnlinePaymentController(OnlinePaymentService s, StripeWebhookService w) { svc = s; webhook = w; }
@@ -50,6 +51,8 @@ public class OnlinePaymentController {
     // ---- Webhook (público; la firma es la autenticación) ----
     @PostMapping("/api/public/stripe/webhook")
     public ResponseEntity<Void> webhook(@RequestBody byte[] payload, @RequestHeader(value = "Stripe-Signature", required = false) String signature) {
+        // T130: los eventos de Stripe ocupan pocos KB; un cuerpo enorme se rechaza antes de calcular la firma.
+        if (payload.length > MAX_WEBHOOK_BYTES) return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
         var event = verified(payload, signature);
         if (event == null) return ResponseEntity.badRequest().build();
         webhook.apply(event);

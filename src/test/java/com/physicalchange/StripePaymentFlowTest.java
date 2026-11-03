@@ -245,6 +245,60 @@ class StripePaymentFlowTest {
         assertEquals("TEST", send("GET", "/api/payments/stripe/status", client, null, 200).get("mode").asText());
     }
 
+    // ---------- Endurecimiento (T130) ----------
+
+    @Test void pagarAManoCierraLaSesionAbiertaYElPagoTardioNoCobraDosVeces() throws Exception {
+        long receipt = pendingReceipt("25");
+        long order = send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201).get("orderId").asLong();
+        String session = stripe.lastSession();
+        send("POST", "/api/receipts/" + receipt + "/pay", trainer, "{\"method\":\"BIZUM\"}", 200);
+        assertTrue(stripe.expired.contains(session));
+        assertEquals("EXPIRED", orders.findById(order).orElseThrow().getStatus());
+        // Si aun así Stripe confirma el pago (carrera), el comprobante no cambia: sigue pagado por Bizum.
+        String event = sessionCompleted("evt_" + UUID.randomUUID(), session, 2500, "payment");
+        webhook(event, sign(event), 200);
+        Receipt x = receipts.findById(receipt).orElseThrow();
+        assertEquals("PAID", x.getStatus());
+        assertEquals("BIZUM", x.getMethod());
+    }
+
+    @Test void anularCierraLaSesionAbierta() throws Exception {
+        long receipt = pendingReceipt("25");
+        long order = send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201).get("orderId").asLong();
+        send("POST", "/api/receipts/" + receipt + "/void", trainer, "{\"reason\":\"Error\"}", 200);
+        assertEquals("EXPIRED", orders.findById(order).orElseThrow().getStatus());
+        send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 409);
+    }
+
+    @Test void eventoDeOtroModoSeIgnora() throws Exception {
+        long receipt = pendingReceipt("15");
+        send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201);
+        String live = sessionCompleted("evt_" + UUID.randomUUID(), stripe.lastSession(), 1500, "payment").replaceFirst("^\\{", "{\"livemode\":true,");
+        webhook(live, sign(live), 200);
+        assertEquals("PENDING", receipts.findById(receipt).orElseThrow().getStatus());
+    }
+
+    @Test void limitesDelWebhookYDeLasSesiones() throws Exception {
+        byte[] huge = new byte[1024 * 1024 + 1];
+        mvc.perform(post("/api/public/stripe/webhook").contentType("application/json").content(huge)
+                .header("Stripe-Signature", StripeSignature.sign(huge, SECRET, now()))).andExpect(status().is(413));
+
+        long receipt = pendingReceipt("12");
+        for (int i = 0; i < 10; i++) send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201);
+        send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 429);
+        // Solo queda abierta la última sesión.
+        assertEquals(1, orders.findByReceiptIdAndStatus(receipt, "PENDING").size());
+    }
+
+    @Test void pedidoCaducadoSinEventoSeVeCaducado() throws Exception {
+        long receipt = pendingReceipt("18");
+        long id = send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201).get("orderId").asLong();
+        PurchaseOrder o = orders.findById(id).orElseThrow();
+        o.setExpiresAt(java.time.LocalDateTime.now().minusMinutes(1));
+        orders.save(o);
+        assertEquals("EXPIRED", send("GET", "/api/me/orders/" + id, client, null, 200).get("status").asText());
+    }
+
     // ---------- Firma (unitario) ----------
 
     @Test void firmaAceptaRotacionYRechazaManipulacion() {
