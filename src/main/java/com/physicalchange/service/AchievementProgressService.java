@@ -170,7 +170,9 @@ public class AchievementProgressService {
                 .filter(e -> "SESSION".equals(e.getKind()) && !e.getStartAt().isAfter(now))
                 .forEach(e -> attended.add(e.getStartAt()));
         List<ProgressEntry> weights = progress.findByClientIdOrderByEntryDateAsc(clientId).stream().filter(p -> p.getWeightKg() != null).toList();
-        return new Activity(logs.findByClientIdOrderByLogDateAscSetNumberAsc(clientId), assignments.findByClientId(clientId), attended,
+        // Las series de calentamiento no cuentan en volumen, repeticiones ni pesos de los logros (T220).
+        return new Activity(logs.findByClientIdOrderByLogDateAscSetNumberAsc(clientId).stream().filter(l -> !l.isWarmup()).toList(),
+                assignments.findByClientId(clientId), attended,
                 weights, profiles.findById(clientId).orElse(null), LocalDate.now());
     }
 
