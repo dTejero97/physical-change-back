@@ -153,10 +153,15 @@ public final class Dtos {
     public record ExerciseLogRequest(Long clientId, Long assignmentId, Long workoutItemId, @NotNull Long exerciseId,
                                      @NotNull LocalDate logDate, @NotNull @Min(1) @Max(50) Integer setNumber,
                                      @NotNull @Min(0) @Max(500) Integer reps,
-                                     @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal weightKg) {}
+                                     @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal weightKg,
+                                     @Pattern(regexp = "WARMUP|NORMAL|FAILURE|DROP") String setType) {
+        /** Sin tipo de serie (anterior a T220): NORMAL. */
+        public ExerciseLogRequest(Long clientId, Long assignmentId, Long workoutItemId, Long exerciseId, LocalDate logDate, Integer setNumber,
+                                  Integer reps, BigDecimal weightKg) { this(clientId, assignmentId, workoutItemId, exerciseId, logDate, setNumber, reps, weightKg, null); }
+    }
     public record ExerciseLogDto(Long id, Long clientId, Long assignmentId, Long workoutItemId, Long exerciseId,
                                  String exerciseName, String muscleGroup, LocalDate logDate, Integer setNumber,
-                                 Integer reps, BigDecimal weightKg) {}
+                                 Integer reps, BigDecimal weightKg, String setType) {}
 
     // ---- Progreso de fuerza y musculatura ----
     public record StrengthPointDto(LocalDate date, BigDecimal maxWeightKg, BigDecimal estimated1RmKg, BigDecimal volumeKg) {}

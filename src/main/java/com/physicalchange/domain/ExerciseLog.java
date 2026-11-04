@@ -18,6 +18,8 @@ public class ExerciseLog {
     @Column(name = "SET_NUMBER", nullable = false) private Integer setNumber;
     @Column(nullable = false) private Integer reps;
     @Column(name = "WEIGHT_KG", nullable = false, precision = 6, scale = 2) private BigDecimal weightKg;
+    /** WARMUP, NORMAL, FAILURE o DROP (T220, V24). WARMUP no cuenta en volumen, repeticiones ni récords. */
+    @Column(name = "SET_TYPE", nullable = false, length = 8) private String setType = "NORMAL";
 
     public Long getId() { return id; }
     public Long getClientId() { return clientId; }
@@ -36,4 +38,7 @@ public class ExerciseLog {
     public void setReps(Integer r) { this.reps = r; }
     public BigDecimal getWeightKg() { return weightKg; }
     public void setWeightKg(BigDecimal w) { this.weightKg = w; }
+    public String getSetType() { return setType == null ? "NORMAL" : setType; }
+    public void setSetType(String t) { this.setType = t == null ? "NORMAL" : t; }
+    public boolean isWarmup() { return "WARMUP".equals(setType); }
 }

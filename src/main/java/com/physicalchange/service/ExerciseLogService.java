@@ -61,6 +61,7 @@ public class ExerciseLogService {
         l.setSetNumber(r.setNumber());
         l.setReps(r.reps());
         l.setWeightKg(r.weightKg());
+        l.setSetType(r.setType());
         ExerciseLogDto dto = ExerciseLogMapper.toDto(logs.save(l), e);
         publisher.publishEvent(new ClientActivityEvent(clientId));
         return dto;
@@ -90,7 +91,8 @@ public class ExerciseLogService {
     @Transactional(readOnly = true)
     public StrengthReportDto strength(Long clientId, LocalDate from) {
         access.assertCanAccessClient(clientId);
-        List<ExerciseLog> all = logs.search(clientId, null, from);
+        // Las series de calentamiento no cuentan en récords ni en volumen (T220).
+        List<ExerciseLog> all = logs.search(clientId, null, from).stream().filter(l -> !l.isWarmup()).toList();
 
         Map<Long, Exercise> byId = new HashMap<>();
         for (ExerciseLog l : all) byId.computeIfAbsent(l.getExerciseId(), id -> exercises.findById(id).orElseThrow());

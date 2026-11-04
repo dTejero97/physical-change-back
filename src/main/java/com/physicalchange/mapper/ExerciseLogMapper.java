@@ -8,6 +8,6 @@ public final class ExerciseLogMapper {
 
     public static ExerciseLogDto toDto(ExerciseLog l, Exercise e) {
         return new ExerciseLogDto(l.getId(), l.getClientId(), l.getAssignmentId(), l.getWorkoutItemId(), l.getExerciseId(),
-                e.getName(), e.getMuscleGroup(), l.getLogDate(), l.getSetNumber(), l.getReps(), l.getWeightKg());
+                e.getName(), e.getMuscleGroup(), l.getLogDate(), l.getSetNumber(), l.getReps(), l.getWeightKg(), l.getSetType());
     }
 }
