@@ -163,8 +163,9 @@ public class WorkoutService {
             Exercise e = exercises.findById(i.getExerciseId()).orElseThrow();
             List<ExerciseLog> mine = done.stream().filter(l -> i.getId().equals(l.getWorkoutItemId())).toList();
             int maxReps = mine.stream().mapToInt(ExerciseLog::getReps).max().orElse(0);
-            BigDecimal maxWeight = mine.stream().map(ExerciseLog::getWeightKg).max(Comparator.naturalOrder()).orElse(null);
+            BigDecimal maxWeight = mine.stream().filter(l -> !l.isWarmup()).map(ExerciseLog::getWeightKg).max(Comparator.naturalOrder()).orElse(null);
             BigDecimal volume = mine.stream()
+                    .filter(l -> !l.isWarmup())   // el calentamiento no cuenta en volumen ni en el peso máximo (T220)
                     .map(l -> TrainingMath.volume(l.getWeightKg(), l.getReps()))
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             int pct = TrainingMath.percent(mine.size(), i.getSets());
