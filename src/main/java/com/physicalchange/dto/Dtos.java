@@ -522,7 +522,8 @@ public final class Dtos {
                                        @NotBlank @Size(min = 8, max = 72) String newPassword) {}
 
     // ---- Equipo (docs/api-equipo.md, ADR-011) ----
-    public record TeamPermissionsDto(boolean assignRoutines, boolean manageAppointments, boolean messageClients) {}
+    /** useContent: generador de contenido (T198). En la petición, null = no cambiarlo (clientes anteriores a T198 no lo envían). */
+    public record TeamPermissionsDto(boolean assignRoutines, boolean manageAppointments, boolean messageClients, Boolean useContent) {}
     public record TeamMemberDto(Long id, String fullName, String email, String status, LocalDateTime invitedAt, LocalDateTime activatedAt,
                                 int activeClients, List<Long> clientIds, TeamPermissionsDto permissions) {}
     public record TeamInviteRequest(@NotBlank @Email @Size(max = 160) String email, @NotBlank @Size(max = 120) String fullName) {}

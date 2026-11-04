@@ -9,11 +9,11 @@ Versión 1.0.0 · 2026-10-28 · Decisión: `../docs/adr/ADR-011-equipo-colaborad
 | GET | `/api/team` | — | `TeamMemberDto[]` (activos e invitados; los dados de baja no salen) |
 | POST | `/api/team/invitations` | `{ email, fullName }` | 201 `TeamMemberDto` (envía el correo de invitación). 409 si el email ya tiene cuenta |
 | POST | `/api/team/{id}/resend` | — | `TeamMemberDto` (nuevo enlace de 7 días; el anterior deja de valer). 409 si ya está activo |
-| PUT | `/api/team/{id}/permissions` | `{ assignRoutines, manageAppointments, messageClients }` | `TeamMemberDto` |
+| PUT | `/api/team/{id}/permissions` | `{ assignRoutines, manageAppointments, messageClients, useContent? }` (T198: `useContent` ausente o null = no se cambia) | `TeamMemberDto` |
 | PUT | `/api/team/{id}/clients` | `{ clientIds: [] }` (≤ 500, clientes propios) | `TeamMemberDto`. 403 si algún cliente no es del profesional |
 | DELETE | `/api/team/{id}` | — | 204. Baja: desactiva al colaborador (cierra sus sesiones) y quita sus asignaciones; no borra nada de lo que creó |
 
-`TeamMemberDto { id, fullName, email, status: ACTIVE | INVITED, invitedAt, activatedAt, activeClients, clientIds, permissions: { assignRoutines, manageAppointments, messageClients } }`
+`TeamMemberDto { id, fullName, email, status: ACTIVE | INVITED, invitedAt, activatedAt, activeClients, clientIds, permissions: { assignRoutines, manageAppointments, messageClients, useContent } }`
 Un miembro ajeno (de otro profesional) responde **404**.
 
 ## El colaborador
@@ -27,6 +27,7 @@ Lo que puede usar (el resto de la API responde 403):
 - Rutinas y ejercicios del espacio del profesional: `/api/workouts/**` (crear, editar, ver), `GET/POST /api/exercises`. Asignar (`POST /api/workouts/assign`) solo con `assignRoutines` y a clientes asignados.
 - Calendario: `GET /api/calendar`. Citas (`/api/appointments`) solo con `manageAppointments` y con clientes asignados.
 - Mensajes (`/api/messages`) solo con `messageClients` y con clientes asignados.
+- Generador de contenido (`/api/content/**`) solo con `useContent` (T198, ADR-014 §9): trabaja en el espacio del profesional, sin conectar ni desconectar cuentas ni generar con IA (J-08). Lo activa o quita solo el profesional.
 - No puede: crear, archivar ni borrar clientes; equipo; Negocio y pagos; etiquetas, invitaciones, leads y comunidad; Librería V2 y `/api/library/**`; Physical AI; archivos.
 
 ## Alta del colaborador (pública, sin JWT)

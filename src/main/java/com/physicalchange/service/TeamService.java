@@ -71,6 +71,8 @@ public class TeamService {
     public TeamMemberDto permissions(Long id, TeamPermissionsDto r) {
         TeamMember m = owned(id);
         m.setPermissions(r.assignRoutines(), r.manageAppointments(), r.messageClients());
+        // Generador de contenido (T198): solo lo cambia el profesional; si no viene, se queda como estaba.
+        if (r.useContent() != null) m.setCanUseContent(r.useContent());
         return toDto(m);
     }
 
@@ -155,7 +157,7 @@ public class TeamService {
     }
 
     private static TeamPermissionsDto permissionsOf(TeamMember m) {
-        return new TeamPermissionsDto(m.isCanAssignRoutines(), m.isCanManageAppointments(), m.isCanMessageClients());
+        return new TeamPermissionsDto(m.isCanAssignRoutines(), m.isCanManageAppointments(), m.isCanMessageClients(), m.isCanUseContent());
     }
 
     private TeamMemberDto toDto(TeamMember m) {
