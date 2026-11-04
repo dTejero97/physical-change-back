@@ -373,10 +373,21 @@ public final class Dtos {
                                     @DecimalMin("0") @DecimalMax("1500") BigDecimal targetCarbsG,
                                     @DecimalMin("0") @DecimalMax("500") BigDecimal targetFatG,
                                     @Size(max = 2000) String notes) {}
-    public record MealRequest(@NotBlank @Size(max = 60) String mealName, @NotNull Long foodId,
-                              @NotNull @DecimalMin("1") @DecimalMax("5000") BigDecimal grams) {}
+    /**
+     * FOOD (foodId + grams) o CUSTOM (sin foodId: name + las cuatro macros; recetas y alimentos sin catálogo). optionNo por
+     * defecto 1. Contrato: docs/api-nutricion-plan-cliente.md (T229).
+     */
+    public record MealRequest(@NotBlank @Size(max = 60) String mealName, Long foodId,
+                              @DecimalMin("1") @DecimalMax("5000") BigDecimal grams,
+                              @Min(1) @Max(10) Integer optionNo, @Size(max = 160) String name, @Size(max = 40) String quantityLabel,
+                              @DecimalMin("0") @DecimalMax("10000") BigDecimal kcal, @DecimalMin("0") @DecimalMax("1000") BigDecimal proteinG,
+                              @DecimalMin("0") @DecimalMax("1000") BigDecimal carbsG, @DecimalMin("0") @DecimalMax("1000") BigDecimal fatG) {
+        /** Alta de un alimento del catálogo (lo que había antes de T229). */
+        public MealRequest(String mealName, Long foodId, BigDecimal grams) { this(mealName, foodId, grams, null, null, null, null, null, null, null); }
+    }
     public record MealDto(Long id, String mealName, Long foodId, String foodName, BigDecimal grams,
-                          BigDecimal kcal, BigDecimal proteinG, BigDecimal carbsG, BigDecimal fatG) {}
+                          BigDecimal kcal, BigDecimal proteinG, BigDecimal carbsG, BigDecimal fatG,
+                          int optionNo, String quantityLabel, boolean custom) {}
     public record Totals(BigDecimal kcal, BigDecimal proteinG, BigDecimal carbsG, BigDecimal fatG) {}
     /** current: es el plan vigente del cliente (el más reciente). */
     public record PlanDto(Long id, Long clientId, String name, Integer dailyKcal, String notes,

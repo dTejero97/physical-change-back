@@ -334,8 +334,8 @@ public class ChangeRequestService {
             NutritionMeal m = c.getMealId() == null ? null : meals.findById(c.getMealId()).filter(x -> x.getPlanId().equals(p.getId())).orElse(null);
             if (m == null) throw new ConflictException("La comida ya no está en el plan; rechaza la solicitud");
             if (c.getFoodId() == null || foods.findById(c.getFoodId()).isEmpty()) throw new ConflictException("El alimento propuesto ya no existe; rechaza la solicitud");
-            m.setFoodId(c.getFoodId());
-            m.setGrams(c.getGrams());
+            // Sobre una receta o alimento sin catálogo (T229) la convierte en un alimento del catálogo.
+            m.setFood(c.getFoodId(), c.getGrams());
         }
         p.touch();
         return "Aplicado en el plan \"" + p.getName() + "\" (versión " + p.getVersion() + ")";
