@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -43,12 +46,13 @@ public class SubscriptionService {
 
     private final PaymentProvider payments;
     private final ApplicationEventPublisher events;
+    private final AuditService audit;
 
     public SubscriptionService(ClientSubscriptionRepository s, SubscriptionPlanRepository p, CouponRepository c, ReceiptRepository r,
                                ReceiptLineRepository l, UserRepository u, ClientDirectory d, ClientProfileService pr, AccessService a,
-                               PaymentProvider pay, ApplicationEventPublisher ev) {
+                               PaymentProvider pay, ApplicationEventPublisher ev, AuditService au) {
         subscriptions = s; plans = p; coupons = c; receipts = r; lines = l; users = u; directory = d; profiles = pr; access = a;
-        payments = pay; events = ev;
+        payments = pay; events = ev; audit = au;
     }
 
     @Transactional(readOnly = true)
@@ -77,6 +81,7 @@ public class SubscriptionService {
             couponId = c.getId();
         }
         ClientSubscription s = start(me.id(), client.getId(), plan, r.startDate(), couponId);
+        audit.record(AuditAction.SUBSCRIPTION_STARTED, "SUBSCRIPTION", s.getId(), client.getId(), plan.getName() + " · " + s.getPrice() + " € · desde " + r.startDate());
         catchUp(s);
         return toDtos(List.of(s)).get(0);
     }
@@ -90,6 +95,7 @@ public class SubscriptionService {
         if (s.getStripeSubscriptionId() != null) payments.cancelSubscription(s.getStripeSubscriptionId());
         s.setStatus("CANCELLED");
         s.setCancelledAt(LocalDateTime.now());
+        audit.record(AuditAction.SUBSCRIPTION_CANCELLED, "SUBSCRIPTION", s.getId(), s.getClientId(), s.getStripeSubscriptionId() != null ? "También en Stripe" : null);
         return toDtos(List.of(s)).get(0);
     }
 
@@ -129,6 +135,7 @@ public class SubscriptionService {
         ClientSubscription s = start(trainerId, clientId, plan, LocalDate.now(), null);
         s.setPrice(price);
         s.setStripeSubscriptionId(stripeSubscriptionId);
+        audit.recordAs(null, null, AuditAction.SUBSCRIPTION_STARTED, "SUBSCRIPTION", s.getId(), clientId, plan.getName() + " · " + price + " € · con tarjeta");
         paidPeriodFromStripe(s);
         return s;
     }

@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.exception.BadRequestException;
 import com.physicalchange.mail.MailService;
@@ -34,8 +37,9 @@ public class PasswordResetService {
     private final MailService mail;
     private final RateLimiter perEmail = new RateLimiter();
 
-    public PasswordResetService(UserRepository u, UserTokenRepository t, PasswordEncoder e, MailService m) {
-        users = u; tokens = t; enc = e; mail = m;
+    private final AuditService audit;
+    public PasswordResetService(UserRepository u, UserTokenRepository t, PasswordEncoder e, MailService m, AuditService au) {
+        users = u; tokens = t; enc = e; mail = m; audit = au;
     }
 
     @Transactional
@@ -58,6 +62,7 @@ public class PasswordResetService {
                 .orElseThrow(() -> new BadRequestException("El enlace no es válido o ha caducado. Pide uno nuevo."));
         u.setPasswordHash(enc.encode(newPassword));
         t.markUsed();
+        audit.recordAs(u.getId(), u.getRole().name(), AuditAction.PASSWORD_RESET, "USER", u.getId(), null, null);
     }
 
     /** 32 bytes aleatorios en base64url (256 bits). */

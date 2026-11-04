@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -26,9 +29,10 @@ public class WorkoutService {
     private final AccessService access;
     private final ApplicationEventPublisher publisher;
 
+    private final AuditService audit;
     public WorkoutService(WorkoutRepository w, WorkoutItemRepository i, WorkoutAssignmentRepository a,
-                          ExerciseRepository e, ExerciseLogRepository l, AccessService ac, ApplicationEventPublisher p) {
-        workouts = w; items = i; assignments = a; exercises = e; logs = l; access = ac; publisher = p;
+                          ExerciseRepository e, ExerciseLogRepository l, AccessService ac, ApplicationEventPublisher p, AuditService au) {
+        workouts = w; items = i; assignments = a; exercises = e; logs = l; access = ac; publisher = p; audit = au;
     }
 
     // ---------- Rutinas ----------
@@ -120,7 +124,9 @@ public class WorkoutService {
         a.setWorkoutId(w.getId());
         a.setClientId(r.clientId());
         a.setScheduledDate(r.scheduledDate());
-        return WorkoutMapper.toDto(assignments.save(a), w);
+        WorkoutAssignment saved = assignments.save(a);
+        audit.record(AuditAction.ROUTINE_ASSIGNED, "ASSIGNMENT", saved.getId(), saved.getClientId(), w.getName() + " · " + r.scheduledDate());
+        return WorkoutMapper.toDto(saved, w);
     }
 
     @Transactional(readOnly = true)

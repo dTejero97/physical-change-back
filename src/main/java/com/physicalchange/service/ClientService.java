@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -16,8 +19,9 @@ import java.util.List;
 public class ClientService {
     private final UserRepository users; private final PasswordEncoder enc; private final AccessService access;
     private final ClientProfileService profiles; private final ChangeRequestService changeRequests;
-    public ClientService(UserRepository u, PasswordEncoder e, AccessService a, ClientProfileService p, ChangeRequestService cr) {
-        users = u; enc = e; access = a; profiles = p; changeRequests = cr;
+    private final AuditService audit;
+    public ClientService(UserRepository u, PasswordEncoder e, AccessService a, ClientProfileService p, ChangeRequestService cr, AuditService au) {
+        users = u; enc = e; access = a; profiles = p; changeRequests = cr; audit = au;
     }
 
     /** Clientes del entrenador (todos si es ADMIN), sin los eliminados desde "Archivados". */
@@ -49,6 +53,7 @@ public class ClientService {
         if (c.getRole() != Role.CLIENT) throw new NotFoundException("Cliente no encontrado");
         c.setFullName(r.fullName());
         c.setActive(r.active());
+        audit.record(AuditAction.CLIENT_UPDATED, "USER", c.getId(), c.getId(), r.active() ? "Activo" : "Archivado");
         return AuthService.toDto(c);
     }
 
@@ -67,6 +72,8 @@ public class ClientService {
         }
         c.setNutritionistId(r.nutritionistId());
         changeRequests.reassignNutrition(c.getId(), access.nutritionResponsibleOf(c), me.id());
+        audit.record(AuditAction.NUTRITIONIST_ASSIGNED, "USER", c.getId(), c.getId(),
+                r.nutritionistId() == null ? "Lo lleva su entrenador" : "Nutricionista: " + users.findById(r.nutritionistId()).map(AppUser::getFullName).orElse("?"));
         return AuthService.toDto(c);
     }
 
@@ -81,6 +88,7 @@ public class ClientService {
         u.setTrainerId(me.role() == Role.TRAINER || me.role() == Role.ADMIN ? me.id() : null);
         u = users.save(u);
         profiles.onClientCreated(u.getId(), u.getTrainerId(), r.tagIds(), null);
+        audit.record(AuditAction.CLIENT_CREATED, "USER", u.getId(), u.getId(), null);
         return AuthService.toDto(u);
     }
 }

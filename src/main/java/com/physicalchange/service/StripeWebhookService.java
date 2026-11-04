@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.physicalchange.domain.*;
 import com.physicalchange.payment.PaymentProvider;
@@ -35,9 +38,10 @@ public class StripeWebhookService {
     private final ReceiptService receipts;
     private final SubscriptionService subscriptionService;
 
+    private final AuditService audit;
     public StripeWebhookService(PaymentProvider pay, StripeEventRepository e, PurchaseOrderRepository o, SubscriptionPlanRepository p,
-                                ClientSubscriptionRepository s, ReceiptService r, SubscriptionService ss) {
-        payments = pay; events = e; orders = o; plans = p; subscriptions = s; receipts = r; subscriptionService = ss;
+                                ClientSubscriptionRepository s, ReceiptService r, SubscriptionService ss, AuditService au) {
+        payments = pay; events = e; orders = o; plans = p; subscriptions = s; receipts = r; subscriptionService = ss; audit = au;
     }
 
     /** Verifica la firma y devuelve el evento (InvalidSignatureException → 400). Se llama antes de apply, fuera de la transacción. */
@@ -85,6 +89,8 @@ public class StripeWebhookService {
         o.setStatus("PAID");
         o.setPaidAt(LocalDateTime.now());
         o.setStripePaymentIntent(text(session.path("payment_intent")));
+        audit.recordAs(null, null, AuditAction.STRIPE_PAYMENT_CONFIRMED, "ORDER", o.getId(), o.getClientId(),
+                ("RECEIPT".equals(o.getKind()) ? "Comprobante PC-" + o.getReceiptId() : "Plan") + " · " + o.getAmount() + " €");
         if ("RECEIPT".equals(o.getKind())) {
             if (!receipts.markPaidByStripe(o.getReceiptId()))
                 log.warn("Stripe: el comprobante {} ya no estaba pendiente; el pedido {} está cobrado y hay que reembolsarlo en Stripe",
@@ -164,6 +170,7 @@ public class StripeWebhookService {
 
     private void cancel(ClientSubscription s) {
         s.setStatus("CANCELLED");
+        audit.recordAs(null, null, AuditAction.SUBSCRIPTION_CANCELLED, "SUBSCRIPTION", s.getId(), s.getClientId(), "Cancelada en Stripe");
         s.setCancelledAt(LocalDateTime.now());
         s.setCancelAtPeriodEnd(false);
     }
@@ -186,6 +193,7 @@ public class StripeWebhookService {
         orders.findFirstByStripePaymentIntent(pi).filter(o -> "PAID".equals(o.getStatus())).ifPresentOrElse(o -> {
             if (!charge.path("refunded").asBoolean(false)) { log.info("Stripe: reembolso parcial del pedido {}; revisar a mano", o.getId()); return; }
             o.setStatus("REFUNDED");
+            audit.recordAs(null, null, AuditAction.STRIPE_REFUND, "ORDER", o.getId(), o.getClientId(), o.getAmount() + " €");
             if ("RECEIPT".equals(o.getKind())) receipts.voidByStripeRefund(o.getReceiptId());
         }, () -> log.info("Stripe: reembolso sin pedido de pago único (p. ej. una renovación); anular el comprobante a mano"));
     }
