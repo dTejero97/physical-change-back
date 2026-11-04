@@ -24,6 +24,12 @@ public class AuthController {
     @PutMapping("/me") public UserDto updateMe(@Valid @RequestBody UpdateProfileRequest r) { return auth.updateProfile(r); }
 
     /** Configuración del profesional: servicios que ofrece (ADR-013). */
+    /** Logo del profesional (T183, docs/api-logo.md): un archivo IMAGE suyo subido antes con POST /api/files. */
+    @PutMapping("/me/logo") @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
+    public UserDto setLogo(@Valid @RequestBody LogoRequest r) { return auth.setLogo(r); }
+    @DeleteMapping("/me/logo") @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
+    public UserDto removeLogo() { return auth.removeLogo(); }
+
     @PutMapping("/me/services") @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN','TRAINER')")
     public UserDto updateServices(@RequestBody ServicesRequest r) { return auth.updateServices(r); }
 
