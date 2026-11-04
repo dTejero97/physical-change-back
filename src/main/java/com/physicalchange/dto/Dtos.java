@@ -24,7 +24,9 @@ public final class Dtos {
      */
     public record UserDto(Long id, String email, String fullName, Role role, Long trainerId, boolean nutritionEnabled,
                           boolean trainingEnabled, Long nutritionistId, Boolean onboardingCompleted,
-                          String trainingResponsibleName, String nutritionResponsibleName) {}
+                          String trainingResponsibleName, String nutritionResponsibleName, String logoUrl) {}
+    /** Logo del profesional (T183, docs/api-logo.md): un archivo IMAGE propio. */
+    public record LogoRequest(@NotNull Long fileId) {}
     /** Servicios que ofrece el profesional: al menos uno. */
     public record ServicesRequest(boolean training, boolean nutrition) {}
     /** null = sin nutricionista propio: lo lleva su entrenador, si ofrece nutrición. */

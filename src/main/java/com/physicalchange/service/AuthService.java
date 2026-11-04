@@ -14,17 +14,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
     private final UserRepository users; private final PasswordEncoder enc; private final JwtService jwt; private final AccessService access;
-    private final LoginAttempts attempts; private final ClientOnboardingRepository onboardings;
+    private final LoginAttempts attempts; private final ClientOnboardingRepository onboardings; private final FileService files;
     /** Hash de relleno: si el email no existe se compara igual, para que el tiempo de respuesta no revele qué cuentas existen. */
     private final String dummyHash;
-    public AuthService(UserRepository u, PasswordEncoder e, JwtService j, AccessService a, LoginAttempts la, ClientOnboardingRepository o) {
-        users = u; enc = e; jwt = j; access = a; attempts = la; onboardings = o; dummyHash = e.encode("relleno-para-tiempo-constante");
+    /** Tamaño máximo del logo del profesional (T183). */
+    static final long LOGO_MAX_BYTES = 2L * 1024 * 1024;
+    public AuthService(UserRepository u, PasswordEncoder e, JwtService j, AccessService a, LoginAttempts la, ClientOnboardingRepository o,
+                       FileService f) {
+        users = u; enc = e; jwt = j; access = a; attempts = la; onboardings = o; files = f; dummyHash = e.encode("relleno-para-tiempo-constante");
     }
 
     /** DTO simple (flag propio del usuario). */
     public static UserDto toDto(AppUser u) {
         return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), u.isNutritionEnabled(),
-                u.isTrainingEnabled(), u.getNutritionistId(), null, null, null);
+                u.isTrainingEnabled(), u.getNutritionistId(), null, null, null, null);
     }
 
     /**
@@ -37,6 +40,8 @@ public class AuthService {
         boolean n = u.isNutritionEnabled(), t = u.isTrainingEnabled();
         Boolean onboarding = null;
         String trainingName = null, nutritionName = null;
+        // Logo (T183): el propio para el profesional; para el cliente, el de su profesional (entrenamiento o, si no, nutrición).
+        Long logoOwner = u.getRole() == Role.TRAINER || u.getRole() == Role.ADMIN ? u.getId() : null;
         if (u.getRole() == Role.CLIENT) {
             Long nutrition = access.nutritionResponsibleOf(u), training = access.trainingResponsibleOf(u);
             n = nutrition != null;
@@ -44,9 +49,40 @@ public class AuthService {
             onboarding = onboardings.isCompleted(u.getId());
             trainingName = nameOf(training);
             nutritionName = nameOf(nutrition);
+            logoOwner = training != null ? training : nutrition;
         }
         return new UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getTrainerId(), n, t, u.getNutritionistId(), onboarding,
-                trainingName, nutritionName);
+                trainingName, nutritionName, logoOf(logoOwner));
+    }
+
+    /** URL firmada (1 h) del logo de ese profesional, o null. */
+    private String logoOf(Long userId) {
+        Long file = userId == null ? null : users.findById(userId).map(AppUser::getLogoFileId).orElse(null);
+        return file == null ? null : files.url(file);
+    }
+
+    /** Logo del profesional (T183, docs/api-logo.md): un archivo IMAGE suyo de hasta 2 MB. */
+    @Transactional
+    public UserDto setLogo(LogoRequest r) {
+        AppUser u = professional();
+        StoredFile f = files.owned(r.fileId(), "IMAGE");
+        if (f.getSizeBytes() > LOGO_MAX_BYTES) throw new PayloadTooLargeException("El logo no puede pasar de 2 MB");
+        u.setLogoFileId(f.getId());
+        return profile(u);
+    }
+
+    /** Quita el logo; el archivo se queda en su Librería. */
+    @Transactional
+    public UserDto removeLogo() {
+        AppUser u = professional();
+        u.setLogoFileId(null);
+        return profile(u);
+    }
+
+    private AppUser professional() {
+        AppUser u = currentUser();
+        if (u.getRole() != Role.TRAINER && u.getRole() != Role.ADMIN) throw new ForbiddenException("Solo un profesional tiene logo");
+        return u;
     }
 
     private String nameOf(Long userId) {
