@@ -1,5 +1,7 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -26,7 +28,10 @@ public class ProfessionalAdminService {
     private final PasswordEncoder enc;
     private final AccessService access;
 
-    public ProfessionalAdminService(UserRepository u, PasswordEncoder e, AccessService a) { users = u; enc = e; access = a; }
+    private final com.physicalchange.service.audit.AuditService audit;
+    public ProfessionalAdminService(UserRepository u, PasswordEncoder e, AccessService a, com.physicalchange.service.audit.AuditService au) {
+        users = u; enc = e; access = a; audit = au;
+    }
 
     @Transactional(readOnly = true)
     public List<ProfessionalAdminDto> list() {
@@ -49,7 +54,10 @@ public class ProfessionalAdminService {
         u.setRole(Role.TRAINER);
         u.setTrainingEnabled(r.training());
         u.setNutritionEnabled(r.nutrition());
-        return dto(users.save(u));
+        AppUser saved = users.save(u);
+        audit.record(AuditAction.PROFESSIONAL_CREATED, "USER", saved.getId(), null,
+                saved.getFullName() + " (entrenamiento " + (r.training() ? "sí" : "no") + ", nutrición " + (r.nutrition() ? "sí" : "no") + ")");
+        return dto(saved);
     }
 
     /** Nombre, servicios y activo. Desactivar cierra sus sesiones; sus clientes y datos se conservan. */
@@ -62,6 +70,8 @@ public class ProfessionalAdminService {
         u.setTrainingEnabled(r.training());
         u.setNutritionEnabled(r.nutrition());
         u.setActive(r.active());
+        audit.record(AuditAction.PROFESSIONAL_UPDATED, "USER", u.getId(), null, u.getFullName() + ": entrenamiento " + (r.training() ? "sí" : "no")
+                + ", nutrición " + (r.nutrition() ? "sí" : "no") + ", " + (r.active() ? "activo" : "desactivado"));
         return dto(u);
     }
 
@@ -69,7 +79,9 @@ public class ProfessionalAdminService {
     @Transactional
     public void setPassword(Long id, ProfessionalPasswordRequest r) {
         requireAdmin();
-        professional(id).setPasswordHash(enc.encode(r.password()));
+        AppUser u = professional(id);
+        u.setPasswordHash(enc.encode(r.password()));
+        audit.record(AuditAction.PROFESSIONAL_PASSWORD_SET, "USER", u.getId(), null, u.getFullName());
     }
 
     private AppUser professional(Long id) {

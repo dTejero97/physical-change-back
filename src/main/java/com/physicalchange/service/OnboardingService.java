@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
@@ -53,9 +56,10 @@ public class OnboardingService {
     private final NotificationService notifications;
     private final AccessService access;
 
+    private final AuditService audit;
     public OnboardingService(ClientOnboardingRepository r, ClientProfileRepository p, ClientProfileService ps, ProgressService pr,
-                             UserRepository u, NotificationService n, AccessService a) {
-        repo = r; profiles = p; profileService = ps; progress = pr; users = u; notifications = n; access = a;
+                             UserRepository u, NotificationService n, AccessService a, AuditService au) {
+        repo = r; profiles = p; profileService = ps; progress = pr; users = u; notifications = n; access = a; audit = au;
     }
 
     // ---------- Cliente ----------
@@ -158,6 +162,12 @@ public class OnboardingService {
     @Transactional(readOnly = true)
     public OnboardingDto forClient(Long clientId) {
         access.assertCanReadOnboarding(clientId);
+        // ADR-016: se registra la lectura de datos de salud por quien no es su responsable (el ADMIN con clientes de otro profesional).
+        var me = access.current();
+        if (me.role() == Role.ADMIN) users.findById(clientId).ifPresent(c -> {
+            if (!me.id().equals(access.trainingResponsibleOf(c)) && !me.id().equals(access.nutritionResponsibleOf(c)))
+                audit.record(AuditAction.HEALTH_DATA_READ, "ONBOARDING", clientId, clientId, "Cuestionario de salud");
+        });
         return dto(clientId);
     }
 

@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -39,10 +42,12 @@ public class ChangeRequestService {
     private final NotificationService notifications;
     private final AccessService access;
 
+    private final AuditService audit;
     public ChangeRequestService(ChangeRequestRepository rq, ChangeRequestEventRepository ev, WorkoutAssignmentRepository a,
                                 WorkoutRepository w, WorkoutItemRepository i, ExerciseRepository e, ExerciseLogRepository l,
                                 NutritionPlanRepository p, NutritionMealRepository m, FoodRepository f, UserRepository u,
-                                NotificationService n, AccessService ac) {
+                                NotificationService n, AccessService ac, AuditService au) {
+        audit = au;
         requests = rq; events = ev; assignments = a; workouts = w; items = i; exercises = e; logs = l;
         plans = p; meals = m; foods = f; users = u; notifications = n; access = ac;
     }
@@ -188,6 +193,7 @@ public class ChangeRequestService {
         String note = blankToNull(d == null ? null : d.note());
         c.decide(ACCEPTED, me, note);
         events.save(new ChangeRequestEvent(c.getId(), me, "ACCEPTED", note == null ? detail : detail + " · " + note));
+        audit.record(AuditAction.CHANGE_REQUEST_DECIDED, "CHANGE_REQUEST", c.getId(), c.getClientId(), "Aceptada (" + (TRAINING.equals(c.getKind()) ? "entrenamiento" : "nutrición") + ")");
         String effect = TRAINING.equals(c.getKind()) ? " " + detail + "; las demás sesiones siguen tu plan." : " Tu plan ya está actualizado.";
         notifications.notify(c.getClientId(), NotificationService.CHANGE_REQUEST_ACCEPTED, "Solicitud aceptada",
                 "Tu profesional ha aceptado " + describe(c) + "." + effect + (note == null ? "" : " Nota: " + note), REF, c.getId());
@@ -202,6 +208,7 @@ public class ChangeRequestService {
         String note = blankToNull(d == null ? null : d.note());
         c.decide(REJECTED, me, note);
         events.save(new ChangeRequestEvent(c.getId(), me, "REJECTED", note));
+        audit.record(AuditAction.CHANGE_REQUEST_DECIDED, "CHANGE_REQUEST", c.getId(), c.getClientId(), "Rechazada (" + (TRAINING.equals(c.getKind()) ? "entrenamiento" : "nutrición") + ")");
         notifications.notify(c.getClientId(), NotificationService.CHANGE_REQUEST_REJECTED, "Solicitud rechazada",
                 "Tu profesional ha rechazado " + describe(c) + ". Tu plan sigue igual." + (note == null ? "" : " Nota: " + note), REF, c.getId());
         return dtos(List.of(c)).get(0);

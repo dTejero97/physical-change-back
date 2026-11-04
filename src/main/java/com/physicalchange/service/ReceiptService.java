@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -47,11 +50,12 @@ public class ReceiptService {
     private final AccessService access;
     private final ApplicationEventPublisher events;
 
+    private final AuditService audit;
     public ReceiptService(ReceiptRepository r, ReceiptLineRepository l, ProductRepository p, SubscriptionPlanRepository sp,
                           CouponRepository c, PlatformPaymentRepository pp, PlatformServiceEntryRepository ps, UserRepository u,
-                          ClientDirectory d, AccessService a, ApplicationEventPublisher e) {
+                          ClientDirectory d, AccessService a, ApplicationEventPublisher e, AuditService au) {
         receipts = r; lines = l; products = p; plans = sp; coupons = c; platformPayments = pp; platformServices = ps; users = u;
-        directory = d; access = a; events = e;
+        directory = d; access = a; events = e; audit = au;
     }
 
     // ---------- Consultas ----------
@@ -102,6 +106,7 @@ public class ReceiptService {
                     d.lines().stream().map(ReceiptLineDto::kind).distinct().map(ReceiptService::kindLabel).collect(Collectors.joining(", ")),
                     methodLabel(d.method()), statusLabel(d.status()), d.paidDate(), d.subtotal(), d.discountAmount(), d.total()));
         }
+        audit.record(AuditAction.EXPORT, "RECEIPT", null, null, "Comprobantes (" + all.size() + " filas, " + format.toLowerCase() + ")");
         LocalDate[] r = range(f.from(), f.to());
         String name = "physical-change-comprobantes-" + r[0] + "-" + r[1] + (xlsx ? ".xlsx" : ".csv");
         return xlsx
@@ -161,6 +166,7 @@ public class ReceiptService {
         short pos = 1;
         for (ReceiptLine l : d.lines) { l.setReceiptId(saved.getId()); l.setPosition(pos++); }
         lines.saveAll(d.lines);
+        audit.record(AuditAction.RECEIPT_CREATED, "RECEIPT", saved.getId(), saved.getClientId(), "PC-" + saved.getId() + " · " + saved.getTotal() + " € · " + saved.getStatus());
         if ("PAID".equals(saved.getStatus())) events.publishEvent(new ReceiptPaidEvent(saved.getId()));
         return toDto(saved, d.lines, nameOf(saved.getClientId()), nameOf(saved.getTrainerId()), LocalDate.now());
     }
@@ -176,6 +182,7 @@ public class ReceiptService {
         x.setPaidDate(paid);
         if (r != null && r.method() != null) x.setMethod(r.method());
         events.publishEvent(new ReceiptPaidEvent(x.getId()));
+        audit.record(AuditAction.RECEIPT_PAID, "RECEIPT", x.getId(), x.getClientId(), "PC-" + x.getId() + " · " + x.getTotal() + " € · " + x.getMethod());
         return toDtos(List.of(x)).get(0);
     }
 
@@ -214,6 +221,7 @@ public class ReceiptService {
         x.setVoidReason(reason);
         x.setVoidedAt(LocalDateTime.now());
         events.publishEvent(new ReceiptVoidedEvent(x.getId(), wasPaid));
+        audit.record(AuditAction.RECEIPT_VOIDED, "RECEIPT", x.getId(), x.getClientId(), "PC-" + x.getId() + " · " + x.getTotal() + " € · " + reason);
     }
 
     /** Comprobante propio o 404 (no se revela si existe uno ajeno). */

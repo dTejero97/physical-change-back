@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -30,9 +33,10 @@ public class TeamService {
     private final AccessService access;
     private final MailService mail;
 
+    private final AuditService audit;
     public TeamService(TeamMemberRepository t, UserRepository u, UserTokenRepository tk, PasswordEncoder e, JwtService j,
-                       AuthService a, AccessService ac, MailService m) {
-        team = t; users = u; tokens = tk; enc = e; jwt = j; auth = a; access = ac; mail = m;
+                       AuthService a, AccessService ac, MailService m, AuditService au) {
+        team = t; users = u; tokens = tk; enc = e; jwt = j; auth = a; access = ac; mail = m; audit = au;
     }
 
     @Transactional(readOnly = true)
@@ -55,6 +59,7 @@ public class TeamService {
         u = users.save(u);
         TeamMember m = team.save(new TeamMember(u.getId(), owner));
         sendInvitation(u, owner);
+        audit.record(AuditAction.TEAM_INVITED, "USER", u.getId(), null, u.getFullName());
         return toDto(m);
     }
 
@@ -73,6 +78,8 @@ public class TeamService {
         m.setPermissions(r.assignRoutines(), r.manageAppointments(), r.messageClients());
         // Generador de contenido (T198): solo lo cambia el profesional; si no viene, se queda como estaba.
         if (r.useContent() != null) m.setCanUseContent(r.useContent());
+        audit.record(AuditAction.TEAM_PERMISSIONS_CHANGED, "USER", m.getUserId(), null, "Rutinas " + yes(r.assignRoutines()) + ", citas "
+                + yes(r.manageAppointments()) + ", mensajes " + yes(r.messageClients()) + ", contenido " + yes(m.isCanUseContent()));
         return toDto(m);
     }
 
@@ -96,8 +103,11 @@ public class TeamService {
         TeamMember m = owned(id);
         m.remove();
         users.findById(id).ifPresent(u -> u.setActive(false));
+        audit.record(AuditAction.TEAM_REMOVED, "USER", id, null, null);
         tokens.invalidate(id, "TEAM_INVITE");
     }
+
+    private static String yes(boolean b) { return b ? "sí" : "no"; }
 
     /** Para la interfaz del colaborador: de quién es el equipo, qué puede hacer y a quién ve. */
     @Transactional(readOnly = true)

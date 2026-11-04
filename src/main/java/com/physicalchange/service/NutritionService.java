@@ -1,5 +1,8 @@
 package com.physicalchange.service;
 
+import com.physicalchange.service.audit.AuditAction;
+import com.physicalchange.service.audit.AuditService;
+
 import com.physicalchange.domain.*;
 import com.physicalchange.dto.Dtos.*;
 import com.physicalchange.exception.*;
@@ -19,9 +22,10 @@ public class NutritionService {
     private final NutritionPlanRepository plans; private final NutritionMealRepository meals; private final AccessService access;
     private final NotificationService notifications;
 
+    private final AuditService audit;
     public NutritionService(UserRepository u, FoodRepository f, NutritionPlanRepository p, NutritionMealRepository m, AccessService a,
-                            NotificationService n) {
-        users = u; foods = f; plans = p; meals = m; access = a; notifications = n;
+                            NotificationService n, AuditService au) {
+        users = u; foods = f; plans = p; meals = m; access = a; notifications = n; audit = au;
     }
 
     // ---- Servicio opcional del entrenador ----
@@ -89,7 +93,9 @@ public class NutritionService {
         p.setTrainerId(access.current().id()); p.setClientId(r.clientId());
         p.setName(r.name()); p.setDailyKcal(r.dailyKcal()); p.setNotes(r.notes());
         p.setTargetProteinG(r.targetProteinG()); p.setTargetCarbsG(r.targetCarbsG()); p.setTargetFatG(r.targetFatG());
-        return build(plans.save(p), true);
+        NutritionPlan saved = plans.save(p);
+        audit.record(AuditAction.NUTRITION_PLAN_ASSIGNED, "NUTRITION_PLAN", saved.getId(), saved.getClientId(), saved.getName());
+        return build(saved, true);
     }
 
     /**
@@ -103,6 +109,7 @@ public class NutritionService {
         p.setName(r.name()); p.setDailyKcal(r.dailyKcal()); p.setNotes(r.notes());
         p.setTargetProteinG(r.targetProteinG()); p.setTargetCarbsG(r.targetCarbsG()); p.setTargetFatG(r.targetFatG());
         p.touch();
+        audit.record(AuditAction.NUTRITION_PLAN_CHANGED, "NUTRITION_PLAN", p.getId(), p.getClientId(), p.getName() + " (versión " + p.getVersion() + ")");
         notifications.notify(p.getClientId(), NotificationService.PLAN_UPDATED, "Plan nutricional actualizado",
                 "Tu profesional ha actualizado el plan " + p.getName() + ".", "NUTRITION_PLAN", p.getId());
         return build(p, isCurrent(p));
