@@ -126,9 +126,21 @@ public class NutritionService {
     public PlanDto addMeal(Long planId, MealRequest r) {
         NutritionPlan p = plans.findById(planId).orElseThrow(() -> new NotFoundException("Plan no encontrado"));
         access.assertNutritionResponsible(p.getClientId());
-        foods.findById(r.foodId()).orElseThrow(() -> new NotFoundException("Alimento no encontrado"));
         NutritionMeal m = new NutritionMeal();
-        m.setPlanId(planId); m.setMealName(r.mealName()); m.setFoodId(r.foodId()); m.setGrams(r.grams());
+        m.setPlanId(planId); m.setMealName(r.mealName().strip());
+        m.setOptionNo(r.optionNo() == null ? 1 : r.optionNo());
+        if (r.foodId() != null) {
+            // FOOD: alimento del catálogo.
+            if (r.grams() == null) throw new BadRequestException("Indica los gramos del alimento");
+            foods.findById(r.foodId()).orElseThrow(() -> new NotFoundException("Alimento no encontrado"));
+            m.setFood(r.foodId(), r.grams());
+        } else {
+            // CUSTOM (T229): receta o alimento que no está en el catálogo; se guarda una copia.
+            if (r.name() == null || r.name().isBlank() || r.kcal() == null || r.proteinG() == null || r.carbsG() == null || r.fatG() == null)
+                throw new BadRequestException("Una receta o alimento sin catálogo necesita nombre, kcal, proteínas, carbohidratos y grasas");
+            String qty = r.quantityLabel() == null || r.quantityLabel().isBlank() ? null : r.quantityLabel().strip();
+            m.setCustom(r.name().strip(), qty, r.grams(), one(r.kcal()), one(r.proteinG()), one(r.carbsG()), one(r.fatG()));
+        }
         m.setPosition(meals.findByPlanIdOrderByMealNameAscPositionAsc(planId).size() + 1);
         meals.save(m);
         p.touch();
@@ -151,16 +163,27 @@ public class NutritionService {
         return per100 == null ? BigDecimal.ZERO : per100.multiply(grams).divide(HUNDRED, 1, RoundingMode.HALF_UP);
     }
 
+    private static BigDecimal one(BigDecimal v) { return v.setScale(1, RoundingMode.HALF_UP); }
+
+    /** Totales del día = solo la opción 1 de cada comida; las demás son alternativas (T229). */
     private PlanDto build(NutritionPlan p, boolean current) {
         List<MealDto> list = new ArrayList<>();
         BigDecimal k = BigDecimal.ZERO, pr = BigDecimal.ZERO, c = BigDecimal.ZERO, f = BigDecimal.ZERO;
         for (NutritionMeal m : meals.findByPlanIdOrderByMealNameAscPositionAsc(p.getId())) {
-            Food food = foods.findById(m.getFoodId()).orElseThrow();
-            BigDecimal mk = part(food.getKcal100g(), m.getGrams()), mp = part(food.getProteinG(), m.getGrams()),
-                       mc = part(food.getCarbsG(), m.getGrams()), mf = part(food.getFatG(), m.getGrams());
-            list.add(new MealDto(m.getId(), m.getMealName(), food.getId(), food.getName(), m.getGrams(), mk, mp, mc, mf));
-            k = k.add(mk); pr = pr.add(mp); c = c.add(mc); f = f.add(mf);
+            MealDto d;
+            if (m.isCustom()) {
+                d = new MealDto(m.getId(), m.getMealName(), null, m.getItemName(), m.getGrams(), m.getKcal(), m.getProteinG(), m.getCarbsG(),
+                        m.getFatG(), m.getOptionNo(), m.getQuantityLabel(), true);
+            } else {
+                Food food = foods.findById(m.getFoodId()).orElseThrow();
+                d = new MealDto(m.getId(), m.getMealName(), food.getId(), food.getName(), m.getGrams(), part(food.getKcal100g(), m.getGrams()),
+                        part(food.getProteinG(), m.getGrams()), part(food.getCarbsG(), m.getGrams()), part(food.getFatG(), m.getGrams()),
+                        m.getOptionNo(), null, false);
+            }
+            list.add(d);
+            if (d.optionNo() == 1) { k = k.add(d.kcal()); pr = pr.add(d.proteinG()); c = c.add(d.carbsG()); f = f.add(d.fatG()); }
         }
+        list.sort(Comparator.comparing(MealDto::mealName).thenComparingInt(MealDto::optionNo));
         return new PlanDto(p.getId(), p.getClientId(), p.getName(), p.getDailyKcal(), p.getNotes(), list, new Totals(k, pr, c, f),
                 p.getTargetProteinG(), p.getTargetCarbsG(), p.getTargetFatG(), p.getVersion(), p.getUpdatedAt(), current);
     }
