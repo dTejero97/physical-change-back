@@ -68,7 +68,7 @@ Mismo DTO `PaymentDto` y mismas rutas, ahora sobre `receipt` (ADR-004 §2): `GET
 `BonusDefinitionDto { id, sessionTypeId, sessionTypeName, color, sessions, validDays }`
 
 ## Planes de suscripción — `/api/subscription-plans`
-Mismas rutas y reglas que productos. `SubscriptionPlanRequest` = `ProductRequest` + `frequency`. `SubscriptionPlanDto` = `ProductDto` + `frequency`, `activeSubscriptions`.
+Mismas rutas y reglas que productos. `SubscriptionPlanRequest` = `ProductRequest` + `frequency` + `programId?` (T248). `SubscriptionPlanDto` = `ProductDto` + `frequency`, `activeSubscriptions`, `programId`, `programName` (T248). Programa vinculado y asignación automática al contratar: `api-entrenamiento-automatico.md`.
 
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
