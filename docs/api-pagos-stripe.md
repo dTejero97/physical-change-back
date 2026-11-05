@@ -1,6 +1,6 @@
 # API Pagos con Stripe (T126, T128) — contrato
 
-Versión 0.3.0 · 2026-11-03 (0.3.0: endurecimiento de T130) · Decisión: `../docs/adr/ADR-009-stripe.md` · Migración: **V20** (`V20__pagos_stripe.sql`)
+Versión 0.4.0 · 2026-11-05 (0.4.0: conciliación sin webhook, T245; 0.3.0: endurecimiento de T130) · Decisión: `../docs/adr/ADR-009-stripe.md` · Migración: **V20** (`V20__pagos_stripe.sql`)
 
 Alcance de esta versión (decisión del usuario 2026-11-03): el **cliente con sesión** (1) paga con tarjeta sus comprobantes pendientes y (2) contrata un plan de su profesional con **renovación automática**. El catálogo público y el registro durante la contratación (`access_status`, `POST /api/public/checkout`) quedan para **T143**.
 
@@ -14,6 +14,7 @@ Cambios respecto a 0.1.0: no hay `stripe_price_id` (cada sesión lleva `price_da
 | `STRIPE_WEBHOOK_SECRET` | secreto `whsec_…` del endpoint de webhook. Con `stripe` es obligatoria |
 | `STRIPE_API_VERSION` | `Stripe-Version` de las llamadas, por defecto `2024-06-20`. No cambia el formato de los webhooks, que sigue la versión configurada en el endpoint de Stripe |
 | `PUBLIC_APP_URL` | base de `success_url`, `cancel_url` y la vuelta del portal |
+| `PAYMENTS_RECONCILE_INTERVAL_MS` | cada cuánto se concilian los pedidos `PENDING` con Stripe (por defecto `300000`, 5 min). Ver "Conciliación sin webhook" |
 
 ## Cliente (rol CLIENT; otro rol → 403)
 | Método | Ruta | Respuesta |
@@ -22,7 +23,7 @@ Cambios respecto a 0.1.0: no hay `stripe_price_id` (cada sesión lleva `price_da
 | GET | `/api/me/plans` | `ClientPlanDto[]`: `{ id, name, description, price, taxRate, frequency, coverUrl, bonuses[], subscribed }`. Solo planes `visibility = ALL`, no archivados, de su profesional (sin entrenador: de los ADMIN) |
 | POST | `/api/me/plans/{id}/checkout` | 201 `{ orderId, checkoutUrl }`. Plan no visible, archivado o de otro profesional → 404; ya activo o con impago → 409 |
 | GET | `/api/me/orders` | `OrderDto[]`: `{ id, kind: RECEIPT \| PLAN, concept, amount, status: PENDING \| PAID \| FAILED \| EXPIRED \| REFUNDED, receiptId, planId, createdAt, paidAt }` |
-| GET | `/api/me/orders/{id}` | `OrderDto`; ajeno → 404. Para la vuelta de Checkout: **el estado real lo pone el webhook** |
+| GET | `/api/me/orders/{id}` | `OrderDto`; ajeno → 404. Para la vuelta de Checkout. El estado lo pone el webhook; si el pedido sigue `PENDING`, antes de responder **se concilia con Stripe** (ver "Conciliación sin webhook"). Si Stripe no responde, se devuelve el estado guardado (nunca 5xx por esto) |
 | GET | `/api/me/subscriptions` | `MySubscriptionDto[]`: `{ id, planId, planName, frequency, price, status: ACTIVE \| PAST_DUE \| CANCELLED, startDate, nextPeriodStart, cancelAtPeriodEnd, online }` (`online` = cobrada por Stripe) |
 | POST | `/api/me/billing-portal` | `{ url }` del Customer Portal de Stripe (tarjeta, facturas, cancelar). Sin ningún pago previo con tarjeta → 409 |
 
@@ -69,6 +70,26 @@ La suscripción de una factura se lee de `invoice.subscription` o, en las versio
 Casos raros (se registran en el log con nivel WARN para revisarlos en Stripe):
 - Comprobante pagado dos veces (dos pestañas o pagado a mano entretanto): los dos pedidos quedan `PAID`, el comprobante una vez; **hay que reembolsar el duplicado en Stripe**.
 - Plan contratado dos veces o archivado durante el pago: se cancela la suscripción en Stripe; **hay que reembolsar el cobro**.
+
+## Conciliación sin webhook (T245)
+Si el webhook se pierde (caída, endpoint mal configurado, desarrollo local sin `stripe listen`), un pedido cobrado se quedaría `PENDING` para siempre. Para evitarlo, el servidor **pregunta a Stripe** por la sesión de Checkout del pedido (`GET /v1/checkout/sessions/{id}`, con la clave secreta; nunca se fía de lo que diga el navegador ni de `?pago=ok`).
+
+Cuándo se concilia:
+- Al consultar `GET /api/me/orders/{id}` un pedido propio en estado `PENDING` (la pantalla de vuelta de Checkout).
+- Tarea programada cada `PAYMENTS_RECONCILE_INTERVAL_MS` (por defecto 5 min): pedidos `PENDING` creados hace entre 2 minutos y 48 horas, hasta 20 por pasada (los más antiguos primero).
+- Como mucho **una consulta a Stripe por pedido cada 10 s** (en memoria; con varias instancias, el límite es por instancia).
+
+Efecto según la sesión devuelta:
+
+| Sesión en Stripe | Efecto |
+|---|---|
+| `status = complete` y `payment_status = paid` | **Lo mismo que `checkout.session.completed`**: comprueba importe y moneda, pedido `PAID`, comprobante pagado o suscripción creada, auditoría |
+| `status = expired` | Pedido `PENDING` → `EXPIRED` |
+| `status = open`, `complete` sin pagar (pago asíncrono en curso) | Nada |
+| `livemode` distinto del de la clave, o `id` distinto del `stripe_session_id` del pedido | Nada (WARN en el log) |
+| Stripe falla o no responde | Nada (WARN en el log); se reintenta en la siguiente consulta |
+
+Idempotencia y carreras: el webhook y la conciliación **bloquean la fila del pedido** (`SELECT … FOR UPDATE`) antes de aplicar nada y solo actúan sobre pedidos `PENDING`. El que llega segundo ve el pedido ya `PAID`/`EXPIRED` y no hace nada, así que nunca hay dos comprobantes ni dos suscripciones. El evento de webhook que llegue tarde se registra en `stripe_event` como siempre. La conciliación no escribe en `stripe_event` (no hay evento).
 
 ## Datos (V20)
 `purchase_order` (cliente, profesional, `kind`, comprobante o plan, suscripción creada, importe ≥ 0,50, estado, `stripe_session_id` único, `stripe_payment_intent`, caducidad, pago) · `stripe_event` (`event_id` PK, tipo, recepción) · `app_user.stripe_customer_id` · `client_subscription.stripe_subscription_id` (único) y `cancel_at_period_end`, estado `PAST_DUE` · `receipt.method` admite `STRIPE` (solo lo pone el webhook; la API manual no lo acepta). Reversión en la cabecera de la migración.
