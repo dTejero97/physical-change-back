@@ -90,6 +90,8 @@ Tipos: `CHANGE_REQUEST_CREATED`, `CHANGE_REQUEST_ACCEPTED`, `CHANGE_REQUEST_REJE
 
 ## 4. Logros del cliente
 
+> **v2 (T260, 2026-11-05):** `emoji`, `categoryId`, estado `COMING_SOON` y recuentos por sección: ver [`api-logros-v2.md`](api-logros-v2.md).
+
 | Ruta | Quién |
 |---|---|
 | `GET /api/my/achievements` | CLIENT |

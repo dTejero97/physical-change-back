@@ -90,6 +90,8 @@ Las respuestas de los clientes llegarán con la app del cliente (propuesta en el
 Copiar WORKOUT crea un workout propio con sus ejercicios (reutiliza ejercicios globales o propios con el mismo nombre; si no existen, los crea como propios). Copiar PROGRAM crea sus workouts y un programa con ellos.
 
 ## Logros — `/api/library/achievements`
+
+> **v2 (T260, 2026-11-05):** puntos y emoji por logro, emoji por categoría, `clientVisible`, estado `COMING_SOON` y catálogo completo: ver [`api-logros-v2.md`](api-logros-v2.md), que amplía esta sección.
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
 | GET | `/api/library/achievements` | — | `CategoryDto[]` (la propia "Logros personalizados" se crea oculta la primera vez) |
