@@ -9,4 +9,6 @@ import java.util.Optional;
 public interface ClientDailyLogRepository extends JpaRepository<ClientDailyLog, Long> {
     Optional<ClientDailyLog> findByClientIdAndLogDate(Long clientId, LocalDate logDate);
     List<ClientDailyLog> findByClientIdAndLogDateBetween(Long clientId, LocalDate from, LocalDate to);
+    /** Todo el diario del cliente en orden (logros del seguimiento, sueño y ánimo, T262). */
+    List<ClientDailyLog> findByClientIdOrderByLogDateAsc(Long clientId);
 }

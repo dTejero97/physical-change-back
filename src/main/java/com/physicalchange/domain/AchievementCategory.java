@@ -12,12 +12,14 @@ public class AchievementCategory {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @Column(name = "TRAINER_ID") private Long trainerId;
-    @Column(name = "SYSTEM_KEY", length = 20) private String systemKey;
+    @Column(name = "SYSTEM_KEY", length = 40) private String systemKey;
     @Column(nullable = false, length = 80) private String name;
     @Column(length = 500) private String description;
     @Column(nullable = false, length = 10) private String icon = "custom";
     @Column(nullable = false, length = 6) private String visibility = "ALL";
     @Column(nullable = false) private Integer position = 0;
+    /** Emoji de la sección (V28); el de sus logros si no tienen uno propio. */
+    @Column(length = 16) private String emoji;
     @Column(name = "CREATED_AT", nullable = false) private LocalDateTime createdAt = LocalDateTime.now();
 
     @ElementCollection
@@ -41,6 +43,8 @@ public class AchievementCategory {
     public void setVisibility(String v) { this.visibility = v; }
     public Integer getPosition() { return position; }
     public void setPosition(Integer p) { this.position = p; }
+    public String getEmoji() { return emoji; }
+    public void setEmoji(String e) { this.emoji = e; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public Set<Long> getTagIds() { return tagIds; }
 }

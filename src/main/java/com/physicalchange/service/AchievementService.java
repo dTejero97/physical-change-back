@@ -32,7 +32,11 @@ public class AchievementService {
         categories = c; achievements = a; prefs = p; hidden = h; exercises = e; files = f; tags = t; access = ac;
     }
 
-    /** Categorías visibles para el profesional con sus logros. La categoría propia se crea oculta la primera vez. */
+    /**
+     * Categorías visibles para el profesional con sus logros. La categoría propia se crea la primera vez **visible** para
+     * sus clientes (T262, api-logros-v2.md §1: antes nacía oculta y lo creado en ella nunca llegaba al cliente).
+     * Las del sistema ocultas para todos y vacías (p. ej. "Progreso" tras V28) no se muestran.
+     */
     @Transactional
     public List<CategoryDto> list() {
         Long me = access.current().id();
@@ -41,7 +45,8 @@ public class AchievementService {
             c.setTrainerId(me);
             c.setName(PERSONAL);
             c.setDescription("Logros creados por ti para tus clientes.");
-            c.setVisibility("HIDDEN");
+            c.setVisibility("ALL");
+            c.setEmoji("⭐");
             categories.save(c);
         }
         List<AchievementCategory> list = categories.findVisibleTo(me);
@@ -51,9 +56,14 @@ public class AchievementService {
         List<Achievement> all = achievements.findByCategoryIdInOrderByPositionAscIdAsc(list.stream().map(AchievementCategory::getId).toList())
                 .stream().filter(a -> a.isSystem() || a.getTrainerId().equals(me)).toList();
         Map<Long, String> exerciseNames = exerciseNames(all);
+        Map<Long, Boolean> catVisible = list.stream().collect(Collectors.toMap(AchievementCategory::getId,
+                c -> clientVisible(c, prefByCat.get(c.getId()))));
         Map<Long, List<AchievementDto>> byCat = all.stream().collect(Collectors.groupingBy(Achievement::getCategoryId,
-                Collectors.mapping(a -> toDto(a, hiddenIds.contains(a.getId()), exerciseNames), Collectors.toList())));
-        return list.stream().map(c -> toDto(c, prefByCat.get(c.getId()), byCat.getOrDefault(c.getId(), List.of()))).toList();
+                Collectors.mapping(a -> toDto(a, hiddenIds.contains(a.getId()), exerciseNames, catVisible.getOrDefault(a.getCategoryId(), false)),
+                        Collectors.toList())));
+        return list.stream()
+                .filter(c -> !(c.isSystem() && "HIDDEN".equals(c.getVisibility()) && byCat.getOrDefault(c.getId(), List.of()).isEmpty()))
+                .map(c -> toDto(c, prefByCat.get(c.getId()), byCat.getOrDefault(c.getId(), List.of()))).toList();
     }
 
     @Transactional
@@ -95,7 +105,7 @@ public class AchievementService {
         a.setTrainerId(access.current().id());
         applyAchievement(a, r);
         a = achievements.save(a);
-        return toDto(a, false, exerciseNames(List.of(a)));
+        return toDto(a, false, exerciseNames(List.of(a)), categoryVisible(a));
     }
 
     @Transactional
@@ -105,7 +115,7 @@ public class AchievementService {
         applyAchievement(a, r);
         achievements.flush();
         if (oldBadge != null && !oldBadge.equals(a.getBadgeFileId())) files.removeById(oldBadge);
-        return toDto(a, isHidden(a), exerciseNames(List.of(a)));
+        return toDto(a, isHidden(a), exerciseNames(List.of(a)), categoryVisible(a));
     }
 
     @Transactional
@@ -120,7 +130,7 @@ public class AchievementService {
         AchievementHidden.Key key = new AchievementHidden.Key(me, id);
         if (r.hidden()) { if (!hidden.existsById(key)) hidden.save(new AchievementHidden(me, id)); }
         else hidden.deleteById(key);
-        return toDto(a, r.hidden(), exerciseNames(List.of(a)));
+        return toDto(a, r.hidden(), exerciseNames(List.of(a)), categoryVisible(a));
     }
 
     // ---------- internos ----------
@@ -151,8 +161,18 @@ public class AchievementService {
         c.setName(r.name().trim());
         c.setDescription(r.description() == null || r.description().isBlank() ? null : r.description().trim());
         c.setVisibility(r.visibility());
+        c.setEmoji(emoji(r.emoji()));
         c.getTagIds().clear();
         if ("TAGS".equals(r.visibility())) c.getTagIds().addAll(tags.own(r.tagIds(), c.getTrainerId(), true));
+    }
+
+    /** Emoji opcional (api-logros-v2.md §2.1): hasta 16 caracteres, sin letras ni cifras ASCII. Vacío = null. */
+    static String emoji(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String e = raw.strip();
+        if (e.length() > 16 || e.chars().anyMatch(ch -> ch < 128 && (Character.isLetterOrDigit(ch) || Character.isWhitespace(ch))))
+            throw new BadRequestException("Emoji no válido");
+        return e;
     }
 
     /** Valida la condición y la duración según su tipo y limpia los campos que no aplican. */
@@ -167,6 +187,11 @@ public class AchievementService {
         a.setTier("TEAL");
         if (r.badgeFileId() != null) files.owned(r.badgeFileId(), "IMAGE");
         a.setBadgeFileId(r.badgeFileId());
+        // Puntos que da al conseguirlo: los mismos que ve el cliente (api-logros-v2.md §2.1).
+        int points = r.points() == null ? 10 : r.points();
+        if (points < 1 || points > 1000) throw new BadRequestException("Los puntos deben estar entre 1 y 1000");
+        a.setPoints(points);
+        a.setEmoji(emoji(r.emoji()));
 
         String type = r.conditionType();
         a.setConditionType(type);
@@ -208,7 +233,25 @@ public class AchievementService {
         Set<Long> hiddenIds = hidden.findByTrainerId(me).stream().map(AchievementHidden::getAchievementId).collect(Collectors.toSet());
         List<Achievement> list = achievements.findByCategoryIdInOrderByPositionAscIdAsc(List.of(c.getId()));
         Map<Long, String> names = exerciseNames(list);
-        return list.stream().map(a -> toDto(a, hiddenIds.contains(a.getId()), names)).toList();
+        boolean visible = clientVisible(c, c.isSystem() ? pref(c.getId(), me) : null);
+        return list.stream().map(a -> toDto(a, hiddenIds.contains(a.getId()), names, visible)).toList();
+    }
+
+    /**
+     * ¿Llega la categoría a todos los clientes del profesional? (api-logros-v2.md §1). Las de etiquetas solo a algunos:
+     * se tratan como no visibles para todos, y la pantalla lo explica.
+     */
+    private static boolean clientVisible(AchievementCategory c, String pref) {
+        if (c.isSystem()) return !"HIDDEN".equals(pref != null ? pref : c.getVisibility());
+        return "ALL".equals(c.getVisibility());
+    }
+
+    private String pref(Long categoryId, Long me) {
+        return prefs.findById(new AchievementCategoryPref.Key(me, categoryId)).map(AchievementCategoryPref::getVisibility).orElse(null);
+    }
+
+    private boolean categoryVisible(Achievement a) {
+        return categories.findById(a.getCategoryId()).map(c -> clientVisible(c, c.isSystem() ? pref(c.getId(), access.current().id()) : null)).orElse(false);
     }
 
     private Map<Long, String> exerciseNames(List<Achievement> list) {
@@ -219,14 +262,16 @@ public class AchievementService {
     private CategoryDto toDto(AchievementCategory c, String pref, List<AchievementDto> list) {
         String visibility = c.isSystem() && pref != null ? pref : c.getVisibility();
         return new CategoryDto(c.getId(), c.getName(), c.getDescription(), c.getIcon(), c.isSystem(), visibility,
-                new ArrayList<>(c.getTagIds()), c.getCreatedAt(), list);
+                new ArrayList<>(c.getTagIds()), c.getCreatedAt(), list, c.getEmoji(), clientVisible(c, pref),
+                c.getPosition() == null ? 0 : c.getPosition());
     }
 
-    private AchievementDto toDto(Achievement a, boolean isHidden, Map<Long, String> exerciseNames) {
+    private AchievementDto toDto(Achievement a, boolean isHidden, Map<Long, String> exerciseNames, boolean categoryVisible) {
         return new AchievementDto(a.getId(), a.getCategoryId(), a.getName(), a.getDescription(), a.getGroupLabel(), a.getBadge(),
                 a.getBadgeFileId(), files.url(a.getBadgeFileId()), a.getTier(), a.getConditionType(), a.getExerciseId(),
                 a.getExerciseId() == null ? null : exerciseNames.get(a.getExerciseId()), a.getWeightKg(), a.getReps(), a.getDays(),
                 a.getTargetKg(), a.getMonths(), a.getDurationType(), a.getStartDate(), a.getEndDate(), a.getDaysAfter(),
-                a.isSystem(), isHidden, a.getCreatedAt());
+                a.isSystem(), isHidden, a.getCreatedAt(),
+                a.getPoints(), a.getEmoji(), a.isComingSoon(), categoryVisible && !isHidden, a.getMetric(), a.getThreshold());
     }
 }

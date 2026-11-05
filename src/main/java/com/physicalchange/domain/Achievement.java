@@ -36,9 +36,13 @@ public class Achievement {
     @Column(nullable = false) private Integer position = 0;
     @Column(name = "CREATED_AT", nullable = false) private LocalDateTime createdAt = LocalDateTime.now();
     /** Solo en los del sistema: qué se mide y cuánto hace falta (ADR-007 §6, ADR-012 §5). */
-    @Column(length = 20) private String metric;
+    @Column(length = 30) private String metric;
     @Column(precision = 12, scale = 2) private BigDecimal threshold;
     @Column(nullable = false) private Integer points = 10;
+    /** Emoji del logro (V28); null = el de su categoría. La foto (badgeFileId) tiene prioridad al mostrarlo. */
+    @Column(length = 16) private String emoji;
+    /** "Próximamente" (V28): la app aún no registra sus datos; no se desbloquea ni suma. */
+    @Column(name = "COMING_SOON", nullable = false) private boolean comingSoon;
 
     public Long getId() { return id; }
     public Long getCategoryId() { return categoryId; }
@@ -89,4 +93,8 @@ public class Achievement {
     public void setThreshold(BigDecimal t) { this.threshold = t; }
     public int getPoints() { return points == null ? 0 : points; }
     public void setPoints(Integer p) { this.points = p; }
+    public String getEmoji() { return emoji; }
+    public void setEmoji(String e) { this.emoji = e; }
+    public boolean isComingSoon() { return comingSoon; }
+    public void setComingSoon(boolean c) { this.comingSoon = c; }
 }
