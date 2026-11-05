@@ -49,6 +49,19 @@ class StripePaymentFlowTest {
             String id = "cs_test_" + seq.incrementAndGet();
             return new CheckoutSession(id, "https://checkout.stripe.com/c/pay/" + id);
         }
+        /** T245: sesiones tal como las devolvería GET /v1/checkout/sessions/{id} (por defecto, abierta y sin pagar). */
+        final Map<String, String> sessions = new java.util.concurrent.ConcurrentHashMap<>();
+        final Map<String, AtomicInteger> retrieved = new java.util.concurrent.ConcurrentHashMap<>();
+        volatile boolean failRetrieve;
+        @Override public JsonNode retrieveCheckout(String sessionId) {
+            retrieved.computeIfAbsent(sessionId, k -> new AtomicInteger()).incrementAndGet();
+            if (failRetrieve) throw new com.physicalchange.payment.PaymentException(502, "No se ha podido contactar con Stripe");
+            try {
+                return json.readTree(sessions.getOrDefault(sessionId,
+                        "{\"id\":\"" + sessionId + "\",\"status\":\"open\",\"payment_status\":\"unpaid\",\"livemode\":false}"));
+            } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        }
+        int retrievedCount(String sessionId) { AtomicInteger n = retrieved.get(sessionId); return n == null ? 0 : n.get(); }
         @Override public void expireCheckout(String sessionId) { expired.add(sessionId); }
         @Override public void cancelSubscription(String id) { cancelled.add(id); }
         @Override public String createPortalSession(String customerId, String returnUrl) { return "https://billing.stripe.com/p/session/" + customerId; }
@@ -73,6 +86,8 @@ class StripePaymentFlowTest {
     @Autowired JwtService jwt;
     @Autowired ObjectMapper json;
     @Autowired FakeStripe stripe;
+    @Autowired com.physicalchange.service.StripeReconciler reconciler;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private final LocalDate today = LocalDate.now();
     private Long trainerId, clientId, otherClientId;
@@ -299,6 +314,117 @@ class StripePaymentFlowTest {
         assertEquals("EXPIRED", send("GET", "/api/me/orders/" + id, client, null, 200).get("status").asText());
     }
 
+    // ---------- Conciliación sin webhook (T245) ----------
+
+    @Test void planPagadoSinWebhookSeConciliaAlVolverYElWebhookTardioNoDuplica() throws Exception {
+        long plan = plan("Mensual " + UUID.randomUUID(), "49", "MONTHLY", "ALL");
+        long order = send("POST", "/api/me/plans/" + plan + "/checkout", client, null, 201).get("orderId").asLong();
+        String session = stripe.lastSession(), subId = "sub_" + UUID.randomUUID();
+        stripe.sessions.put(session, paidSession(session, 4900, subId, false));
+
+        JsonNode o = send("GET", "/api/me/orders/" + order, client, null, 200);
+        assertEquals("PAID", o.get("status").asText());
+        assertEquals(1, stripe.retrievedCount(session));
+        ClientSubscription s = subscriptions.findByStripeSubscriptionId(subId).orElseThrow();
+        assertEquals("ACTIVE", s.getStatus());
+        assertEquals(s.getId(), orders.findById(order).orElseThrow().getSubscriptionId());
+
+        // El webhook llega después: 200, sin segunda suscripción ni segundo comprobante.
+        String late = sessionCompleted("evt_" + UUID.randomUUID(), session, 4900, "subscription")
+                .replace("\"subscription\":null", "\"subscription\":\"" + subId + "\"");
+        webhook(late, sign(late), 200);
+        assertEquals(1, subscriptions.findAll().stream().filter(x -> subId.equals(x.getStripeSubscriptionId())).count());
+        assertEquals(1, receipts.findAll().stream().filter(x -> s.getId().equals(x.getSubscriptionId())).count());
+        assertTrue(stripe.cancelled.stream().noneMatch(subId::equals));   // no se tomó por contratación doble
+
+        // Ya PAID: no se vuelve a consultar a Stripe.
+        send("GET", "/api/me/orders/" + order, client, null, 200);
+        assertEquals(1, stripe.retrievedCount(session));
+    }
+
+    @Test void comprobanteConWebhookPrevioNoConsultaStripe() throws Exception {
+        long receipt = pendingReceipt("30");
+        long order = send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201).get("orderId").asLong();
+        String session = stripe.lastSession();
+        String event = sessionCompleted("evt_" + UUID.randomUUID(), session, 3000, "payment");
+        webhook(event, sign(event), 200);
+        assertEquals("PAID", send("GET", "/api/me/orders/" + order, client, null, 200).get("status").asText());
+        assertEquals(0, stripe.retrievedCount(session));
+        assertEquals("PAID", receipts.findById(receipt).orElseThrow().getStatus());
+    }
+
+    @Test void sesionAbiertaNoCambiaYSoloSeConsultaUnaVezCada10sYNuncaParaUnAjeno() throws Exception {
+        long receipt = pendingReceipt("20");
+        long order = send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201).get("orderId").asLong();
+        String session = stripe.lastSession();
+        send("GET", "/api/me/orders/" + order, otherClient, null, 404);
+        assertEquals(0, stripe.retrievedCount(session));                    // lo ajeno no llega a Stripe
+        assertEquals("PENDING", send("GET", "/api/me/orders/" + order, client, null, 200).get("status").asText());
+        assertEquals("PENDING", send("GET", "/api/me/orders/" + order, client, null, 200).get("status").asText());
+        assertEquals(1, stripe.retrievedCount(session));                    // límite de 10 s
+        assertEquals("PENDING", receipts.findById(receipt).orElseThrow().getStatus());
+    }
+
+    @Test void sesionCaducadaEnStripePasaAExpiredYStripeCaidoNoRompeLaRespuesta() throws Exception {
+        long r1 = pendingReceipt("21");
+        long expiredOrder = send("POST", "/api/me/receipts/" + r1 + "/checkout", client, null, 201).get("orderId").asLong();
+        String s1 = stripe.lastSession();
+        stripe.sessions.put(s1, "{\"id\":\"" + s1 + "\",\"status\":\"expired\",\"payment_status\":\"unpaid\",\"livemode\":false}");
+        assertEquals("EXPIRED", send("GET", "/api/me/orders/" + expiredOrder, client, null, 200).get("status").asText());
+        assertEquals("EXPIRED", orders.findById(expiredOrder).orElseThrow().getStatus());
+        assertEquals("PENDING", receipts.findById(r1).orElseThrow().getStatus());   // el comprobante sigue pendiente de pago
+
+        long r2 = pendingReceipt("22");
+        long down = send("POST", "/api/me/receipts/" + r2 + "/checkout", client, null, 201).get("orderId").asLong();
+        stripe.failRetrieve = true;
+        try {
+            assertEquals("PENDING", send("GET", "/api/me/orders/" + down, client, null, 200).get("status").asText());
+        } finally {
+            stripe.failRetrieve = false;
+        }
+    }
+
+    @Test void conciliacionNoConcedeConImporteDistintoNiConOtroModoNiConSesionAjena() throws Exception {
+        // Importe distinto → FAILED, nada se concede.
+        long r1 = pendingReceipt("40");
+        long o1 = send("POST", "/api/me/receipts/" + r1 + "/checkout", client, null, 201).get("orderId").asLong();
+        String s1 = stripe.lastSession();
+        stripe.sessions.put(s1, paidSession(s1, 100, null, false));
+        assertEquals("FAILED", send("GET", "/api/me/orders/" + o1, client, null, 200).get("status").asText());
+        assertEquals("PENDING", receipts.findById(r1).orElseThrow().getStatus());
+
+        // Sesión de modo real con clave de pruebas → se ignora.
+        long r2 = pendingReceipt("41");
+        long o2 = send("POST", "/api/me/receipts/" + r2 + "/checkout", client, null, 201).get("orderId").asLong();
+        String s2 = stripe.lastSession();
+        stripe.sessions.put(s2, paidSession(s2, 4100, null, true));
+        assertEquals("PENDING", send("GET", "/api/me/orders/" + o2, client, null, 200).get("status").asText());
+
+        // Stripe devuelve una sesión que no es la del pedido → se ignora.
+        long r3 = pendingReceipt("42");
+        long o3 = send("POST", "/api/me/receipts/" + r3 + "/checkout", client, null, 201).get("orderId").asLong();
+        String s3 = stripe.lastSession();
+        stripe.sessions.put(s3, paidSession(s1, 4200, null, false));
+        assertEquals("PENDING", send("GET", "/api/me/orders/" + o3, client, null, 200).get("status").asText());
+        assertEquals("PENDING", receipts.findById(r3).orElseThrow().getStatus());
+    }
+
+    @Test void tareaProgramadaConciliaPedidosPendientesAunqueElClienteNoVuelva() throws Exception {
+        long receipt = pendingReceipt("33");
+        long order = send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201).get("orderId").asLong();
+        String session = stripe.lastSession();
+        stripe.sessions.put(session, paidSession(session, 3300, null, false));
+
+        reconciler.reconcilePending();                                      // recién creado (< 2 min): no se toca
+        assertEquals(0, stripe.retrievedCount(session));
+
+        jdbc.update("update purchase_order set created_at = ? where id = ?", java.time.LocalDateTime.now().minusMinutes(5), order);
+        reconciler.reconcilePending();
+        assertEquals("PAID", orders.findById(order).orElseThrow().getStatus());
+        assertEquals("PAID", receipts.findById(receipt).orElseThrow().getStatus());
+        assertEquals("STRIPE", receipts.findById(receipt).orElseThrow().getMethod());
+    }
+
     // ---------- Firma (unitario) ----------
 
     @Test void firmaAceptaRotacionYRechazaManipulacion() {
@@ -334,6 +460,14 @@ class StripePaymentFlowTest {
                 + "\"object\":\"checkout.session\",\"mode\":\"" + mode + "\",\"payment_status\":\"paid\",\"amount_total\":" + amount + ","
                 + "\"currency\":\"eur\",\"payment_intent\":" + ("payment".equals(mode) ? "\"pi_" + session + "\"" : "null")
                 + ",\"subscription\":null}}}";
+    }
+
+    /** Sesión completada y pagada tal como la devuelve GET /v1/checkout/sessions/{id} (T245). */
+    private static String paidSession(String session, long amount, String subId, boolean livemode) {
+        return "{\"id\":\"" + session + "\",\"object\":\"checkout.session\",\"status\":\"complete\",\"payment_status\":\"paid\","
+                + "\"amount_total\":" + amount + ",\"currency\":\"eur\",\"livemode\":" + livemode + ","
+                + "\"payment_intent\":" + (subId == null ? "\"pi_" + session + "\"" : "null") + ","
+                + "\"subscription\":" + (subId == null ? "null" : "\"" + subId + "\"") + "}";
     }
 
     /** Formato de las versiones de 2025: la suscripción va en parent.subscription_details. */

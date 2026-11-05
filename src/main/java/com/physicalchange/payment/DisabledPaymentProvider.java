@@ -10,6 +10,7 @@ public class DisabledPaymentProvider implements PaymentProvider {
     @Override public String createCustomer(long userId, String email, String name) { throw PaymentException.disabled(); }
     @Override public CheckoutSession createCheckout(CheckoutRequest r) { throw PaymentException.disabled(); }
     @Override public void expireCheckout(String sessionId) { throw PaymentException.disabled(); }
+    @Override public JsonNode retrieveCheckout(String sessionId) { throw PaymentException.disabled(); }
     @Override public void cancelSubscription(String subscriptionId) { throw PaymentException.disabled(); }
     @Override public String createPortalSession(String customerId, String returnUrl) { throw PaymentException.disabled(); }
     @Override public JsonNode verifyWebhook(byte[] payload, String signatureHeader) { throw PaymentException.disabled(); }

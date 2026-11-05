@@ -37,6 +37,7 @@ app:
       secret-key: ${STRIPE_SECRET_KEY:}           # secreto: sk_test_… en pruebas, sk_live_… en real; solo en Render
       webhook-secret: ${STRIPE_WEBHOOK_SECRET:}   # secreto: whsec_… del endpoint /api/public/stripe/webhook
       api-version: ${STRIPE_API_VERSION:2024-06-20}   # Stripe-Version de las llamadas (no cambia el formato de los webhooks)
+    reconcile-interval-ms: ${PAYMENTS_RECONCILE_INTERVAL_MS:300000}   # T245: concilia con Stripe los pedidos PENDING si no llega el webhook
   jwt:
     secret: ${JWT_SECRET}            # obligatorio, mínimo 32 caracteres
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:120}
