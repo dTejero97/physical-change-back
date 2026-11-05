@@ -9,4 +9,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     @Query("select m from ChatMessage m where (m.senderId = :a and m.recipientId = :b) " +
            "or (m.senderId = :b and m.recipientId = :a) order by m.sentAt desc")
     Page<ChatMessage> conversation(@Param("a") Long a, @Param("b") Long b, Pageable p);
+
+    /** Fechas de los mensajes que ha enviado un usuario, en orden (logros MESSAGES_SENT, T262). */
+    @Query("select m.sentAt from ChatMessage m where m.senderId = :s order by m.sentAt")
+    java.util.List<java.time.LocalDateTime> sentDates(@Param("s") Long senderId);
 }

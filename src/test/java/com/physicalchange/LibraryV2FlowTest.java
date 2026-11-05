@@ -216,7 +216,8 @@ class LibraryV2FlowTest {
         JsonNode cats = send("GET", "/api/library/achievements", trainer, null, 200);
         JsonNode personal = cats.get(0);
         assertEquals("Logros personalizados", personal.get("name").asText());
-        assertEquals("HIDDEN", personal.get("visibility").asText());
+        // T260/T262 (api-logros-v2.md §1): la categoría personal nace visible para que lo creado en ella llegue al cliente.
+        assertEquals("ALL", personal.get("visibility").asText());
         assertFalse(personal.get("system").asBoolean());
         long personalId = personal.get("id").asLong();
 

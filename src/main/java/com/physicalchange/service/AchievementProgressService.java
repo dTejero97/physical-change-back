@@ -33,7 +33,10 @@ import java.util.stream.Collectors;
 @Service
 public class AchievementProgressService {
     private static final Logger log = LoggerFactory.getLogger(AchievementProgressService.class);
-    static final String UNLOCKED = "UNLOCKED", LOCKED = "LOCKED", NO_DATA = "NO_DATA";
+    static final String UNLOCKED = "UNLOCKED", LOCKED = "LOCKED", NO_DATA = "NO_DATA", COMING_SOON = "COMING_SOON";
+    /** Grupos musculares "grandes" y de core (api-logros-v2.md §4, valores reales de exercise.muscle_group). */
+    static final Set<String> BIG_GROUPS = Set.of("Pecho", "Espalda", "Hombros", "Cuádriceps", "Isquiotibiales", "Glúteos", "Piernas");
+    static final Set<String> CORE_GROUPS = Set.of("Abdomen", "Core");
     static final int XP_PER_LEVEL = 100;
     /** Rangos del nivel (etiquetas vistas en TotalGains, totalgains/logros.md §5). */
     static final List<String> LEVEL_NAMES = List.of("Novato", "Iniciado", "Constante", "Dedicado", "Guerrero", "Veterano",
@@ -56,14 +59,21 @@ public class AchievementProgressService {
     private final FileService files;
     private final AccessService access;
     private final TransactionTemplate newTx;
+    // Logros v2 (T262): grupos musculares, programas, diario y mensajes.
+    private final ExerciseRepository exercises;
+    private final ProgramAssignmentRepository programAssignments;
+    private final ClientDailyLogRepository diary;
+    private final ChatMessageRepository messages;
 
     public AchievementProgressService(UserRepository u, ClientProfileRepository cp, AchievementCategoryRepository c, AchievementRepository a,
                                       AchievementCategoryPrefRepository p, AchievementHiddenRepository h, AchievementUnlockRepository un,
                                       ClientStatsRepository s, ExerciseLogRepository l, WorkoutAssignmentRepository wa,
                                       AgendaBookingRepository b, AgendaEventRepository e, ProgressEntryRepository pr,
-                                      NotificationService n, FileService f, AccessService ac, PlatformTransactionManager tm) {
+                                      NotificationService n, FileService f, AccessService ac, PlatformTransactionManager tm,
+                                      ExerciseRepository ex, ProgramAssignmentRepository pa, ClientDailyLogRepository dl, ChatMessageRepository cm) {
         users = u; profiles = cp; categories = c; achievements = a; prefs = p; hidden = h; unlocks = un; stats = s; logs = l;
         assignments = wa; bookings = b; events = e; progress = pr; notifications = n; files = f; access = ac;
+        exercises = ex; programAssignments = pa; diary = dl; messages = cm;
         newTx = new TransactionTemplate(tm);
         newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -97,6 +107,7 @@ public class AchievementProgressService {
 
     record Result(String status, LocalDate unlockedOn, BigDecimal progress, BigDecimal target) {
         static Result noData() { return new Result(NO_DATA, null, null, null); }
+        static Result comingSoon() { return new Result(COMING_SOON, null, null, null); }
         static Result locked(Number progress, Number target) { return new Result(LOCKED, null, dec(progress), dec(target)); }
         static Result unlocked(LocalDate on, Number progress, Number target) { return new Result(UNLOCKED, on, dec(progress), dec(target)); }
     }
@@ -105,7 +116,10 @@ public class AchievementProgressService {
 
     /** Datos de actividad de un cliente, leídos una vez por evaluación. */
     record Activity(List<ExerciseLog> logs, List<WorkoutAssignment> assignments, List<LocalDateTime> attended,
-                    List<ProgressEntry> weights, ClientProfile profile, LocalDate today) {
+                    List<ProgressEntry> weights, ClientProfile profile, LocalDate today,
+                    // T262: grupo muscular por ejercicio, programas asignados, diario y fechas de mensajes enviados.
+                    Map<Long, String> muscleGroups, List<ProgramAssignment> programs, List<ClientDailyLog> diary,
+                    List<LocalDate> messagesSent) {
         TreeSet<LocalDate> activeDays(LocalDate from, LocalDate to) {
             TreeSet<LocalDate> days = new TreeSet<>();
             logs.forEach(l -> days.add(l.getLogDate()));
@@ -171,9 +185,16 @@ public class AchievementProgressService {
                 .forEach(e -> attended.add(e.getStartAt()));
         List<ProgressEntry> weights = progress.findByClientIdOrderByEntryDateAsc(clientId).stream().filter(p -> p.getWeightKg() != null).toList();
         // Las series de calentamiento no cuentan en volumen, repeticiones ni pesos de los logros (T220).
-        return new Activity(logs.findByClientIdOrderByLogDateAscSetNumberAsc(clientId).stream().filter(l -> !l.isWarmup()).toList(),
-                assignments.findByClientId(clientId), attended,
-                weights, profiles.findById(clientId).orElse(null), LocalDate.now());
+        List<ExerciseLog> work = logs.findByClientIdOrderByLogDateAscSetNumberAsc(clientId).stream().filter(l -> !l.isWarmup()).toList();
+        Set<Long> exerciseIds = work.stream().map(ExerciseLog::getExerciseId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> groups = new HashMap<>();
+        if (!exerciseIds.isEmpty()) exercises.findAllById(exerciseIds).forEach(x -> {
+            if (x.getMuscleGroup() != null && !x.getMuscleGroup().isBlank()) groups.put(x.getId(), x.getMuscleGroup().strip());
+        });
+        return new Activity(work, assignments.findByClientId(clientId), attended,
+                weights, profiles.findById(clientId).orElse(null), LocalDate.now(),
+                groups, programAssignments.findByClientIdOrderByCreatedAtDesc(clientId), diary.findByClientIdOrderByLogDateAsc(clientId),
+                messages.sentDates(clientId).stream().map(LocalDateTime::toLocalDate).toList());
     }
 
     private static void updateStats(ClientStats st, Activity act) {
@@ -228,6 +249,8 @@ public class AchievementProgressService {
     }
 
     Result evaluate(Achievement a, Activity act) {
+        // "Próximamente" (api-logros-v2.md §3.1): la app aún no registra sus datos; nunca se desbloquea.
+        if (a.isComingSoon()) return Result.comingSoon();
         LocalDate[] w = window(a, act);
         LocalDate from = w[0], to = w[1];
         if (to.isBefore(from)) return Result.locked(0, null);
@@ -259,6 +282,36 @@ public class AchievementProgressService {
                                  l -> BigDecimal.valueOf(l.getReps()), BigDecimal.valueOf(a.getReps()));
             case "BODY_WEIGHT" -> bodyWeight(act, a.getTargetKg(), from, to);
             case "TIME_WITH_YOU" -> timeWithYou(act, a.getMonths(), from, to);
+            // ---- Logros v2 (api-logros-v2.md §4) ----
+            case "SESSION_MUSCLE_GROUPS" -> perDayMax(perDay(act.logsIn(from, to), l -> act.muscleGroups().get(l.getExerciseId())), n);
+            case "SESSION_BIG_GROUPS" -> perDayMax(perDay(act.logsIn(from, to), l -> {
+                String g = act.muscleGroups().get(l.getExerciseId());
+                return g != null && BIG_GROUPS.contains(g) ? g : null;
+            }), n);
+            case "SESSION_CORE_EXERCISES" -> perDayMax(perDay(act.logsIn(from, to), l ->
+                    CORE_GROUPS.contains(act.muscleGroups().getOrDefault(l.getExerciseId(), "")) ? String.valueOf(l.getExerciseId()) : null), n);
+            case "FULL_BODY_SESSION" -> fullBody(act, act.logsIn(from, to), a.getThreshold());
+            case "PROGRAMS_COMPLETED" -> milestone(programsCompleted(act, from, to), n);
+            case "WEEK_WORKOUTS" -> weekCount(completedDates(act, from, to), n);
+            case "DOUBLE_SESSION" -> milestone(completedDates(act, from, to).stream()
+                    .collect(Collectors.groupingBy(d -> d, TreeMap::new, Collectors.counting()))
+                    .entrySet().stream().filter(e -> e.getValue() >= 2).map(Map.Entry::getKey).toList(), n);
+            case "WEEKDAY_STREAK_MON" -> weekdayStreak(act.activeDays(from, to), DayOfWeek.MONDAY, n);
+            case "WEEKDAY_STREAK_FRI" -> weekdayStreak(act.activeDays(from, to), DayOfWeek.FRIDAY, n);
+            case "COMEBACK" -> comeback(act.activeDays(from, to), n);
+            case "CONSECUTIVE_WORKOUTS" -> consecutiveWorkouts(act, n);
+            case "DROP_SETS" -> milestone(act.logsIn(from, to).stream().filter(l -> "DROP".equals(l.getSetType()))
+                    .map(ExerciseLog::getLogDate).sorted().toList(), n);
+            case "WEIGHT_LOGGED" -> milestone(act.weights().stream().map(ProgressEntry::getEntryDate)
+                    .filter(d -> !d.isBefore(from) && !d.isAfter(to)).sorted().toList(), n);
+            case "DIARY_STREAK" -> streak(diaryDays(act, from, to, x -> true), n);
+            case "DIARY_WEEKS" -> weekStreak(diaryDays(act, from, to, x -> true), n);
+            case "SLEEP_NIGHT_MIN" -> sleepNight(act, from, to, n);
+            case "SLEEP_STREAK_7H" -> streak(diaryDays(act, from, to, x -> x.getSleepMinutes() != null && x.getSleepMinutes() >= 420), n);
+            case "SHORT_SLEEP_LOGGED" -> milestone(new ArrayList<>(diaryDays(act, from, to, x -> x.getSleepMinutes() != null && x.getSleepMinutes() < 300)), n);
+            case "MOOD_LOW_STREAK" -> streak(diaryDays(act, from, to, x -> x.getMood() != null && x.getMood() == 1), n);
+            case "MOOD_COMEBACK" -> moodComeback(act, from, to, n);
+            case "MESSAGES_SENT" -> milestone(act.messagesSent().stream().filter(d -> !d.isBefore(from) && !d.isAfter(to)).sorted().toList(), n);
             // CARDIO, NUTRITION, VIDEOS: no hay datos que permitan comprobarlos (nunca bloqueado ni conseguido sin más).
             default -> Result.noData();
         };
@@ -380,6 +433,188 @@ public class AchievementProgressService {
         return Result.locked(0, 1);
     }
 
+    // ---------- Métricas v2 (api-logros-v2.md §4). "Sesión" = las series de un mismo día ----------
+
+    /** Valores distintos (no nulos) por día, en orden de fecha. */
+    private static SortedMap<LocalDate, Set<String>> perDay(List<ExerciseLog> logs, java.util.function.Function<ExerciseLog, String> key) {
+        SortedMap<LocalDate, Set<String>> out = new TreeMap<>();
+        for (ExerciseLog l : logs) {
+            String k = l.getExerciseId() == null ? null : key.apply(l);
+            if (k != null) out.computeIfAbsent(l.getLogDate(), d -> new HashSet<>()).add(k);
+        }
+        return out;
+    }
+
+    /** Primer día con ≥ n valores distintos; si no, el máximo alcanzado en un día. */
+    private static Result perDayMax(SortedMap<LocalDate, Set<String>> perDay, int n) {
+        if (n <= 0) return Result.noData();
+        int best = 0;
+        for (var e : perDay.entrySet()) {
+            if (e.getValue().size() >= n) return Result.unlocked(e.getKey(), n, n);
+            best = Math.max(best, e.getValue().size());
+        }
+        return Result.locked(best, n);
+    }
+
+    /** Un día con ≥ 4 grupos musculares distintos y volumen ≥ objetivo. Progreso: mejor volumen de esos días. */
+    private static Result fullBody(Activity act, List<ExerciseLog> logs, BigDecimal target) {
+        if (target == null) return Result.noData();
+        SortedMap<LocalDate, Set<String>> groups = perDay(logs, l -> act.muscleGroups().get(l.getExerciseId()));
+        Map<LocalDate, BigDecimal> volume = new HashMap<>();
+        for (ExerciseLog l : logs) volume.merge(l.getLogDate(), TrainingMath.volume(l.getWeightKg(), l.getReps()), BigDecimal::add);
+        BigDecimal best = BigDecimal.ZERO;
+        for (var e : groups.entrySet()) {
+            if (e.getValue().size() < 4) continue;
+            BigDecimal v = volume.getOrDefault(e.getKey(), BigDecimal.ZERO);
+            if (v.compareTo(target) >= 0) return Result.unlocked(e.getKey(), target, target);
+            best = best.max(v);
+        }
+        return Result.locked(best, target);
+    }
+
+    /** Fechas de workouts completados en la ventana (con repetidos si hay dos el mismo día), en orden. */
+    private static List<LocalDate> completedDates(Activity act, LocalDate from, LocalDate to) {
+        return act.assignments().stream().map(WorkoutAssignment::getCompletedDate)
+                .filter(d -> d != null && !d.isBefore(from) && !d.isAfter(to)).sorted().toList();
+    }
+
+    /** Una semana (lunes a domingo) con ≥ n fechas de la lista. */
+    private static Result weekCount(List<LocalDate> sorted, int n) {
+        if (n <= 0) return Result.noData();
+        Map<LocalDate, List<LocalDate>> byWeek = new TreeMap<>();
+        for (LocalDate d : sorted) byWeek.computeIfAbsent(d.with(DayOfWeek.MONDAY), k -> new ArrayList<>()).add(d);
+        int best = 0;
+        for (List<LocalDate> week : byWeek.values()) {
+            if (week.size() >= n) return Result.unlocked(week.get(n - 1), n, n);
+            best = Math.max(best, week.size());
+        }
+        return Result.locked(best, n);
+    }
+
+    /** Programas asignados con todos sus workouts completados: fecha del último completado, en orden. */
+    private static List<LocalDate> programsCompleted(Activity act, LocalDate from, LocalDate to) {
+        Map<Long, List<WorkoutAssignment>> byProgram = act.assignments().stream().filter(w -> w.getProgramAssignmentId() != null)
+                .collect(Collectors.groupingBy(WorkoutAssignment::getProgramAssignmentId));
+        List<LocalDate> done = new ArrayList<>();
+        for (ProgramAssignment p : act.programs()) {
+            List<WorkoutAssignment> ws = byProgram.getOrDefault(p.getId(), List.of());
+            if (ws.isEmpty() || ws.stream().anyMatch(w -> w.getCompletedDate() == null)) continue;
+            LocalDate last = ws.stream().map(WorkoutAssignment::getCompletedDate).max(Comparator.naturalOrder()).orElseThrow();
+            if (!last.isBefore(from) && !last.isAfter(to)) done.add(last);
+        }
+        Collections.sort(done);
+        return done;
+    }
+
+    /** n semanas seguidas con actividad en ese día de la semana. */
+    private static Result weekdayStreak(SortedSet<LocalDate> days, DayOfWeek dow, int n) {
+        if (n <= 0) return Result.noData();
+        int run = 0, best = 0;
+        LocalDate prev = null;
+        for (LocalDate d : days) {
+            if (d.getDayOfWeek() != dow) continue;
+            run = prev != null && prev.plusWeeks(1).equals(d) ? run + 1 : 1;
+            best = Math.max(best, run);
+            if (run >= n) return Result.unlocked(d, n, n);
+            prev = d;
+        }
+        return Result.locked(best, n);
+    }
+
+    /** Vuelve a haber actividad tras ≥ n días seguidos sin ella. Sin progreso medible (sí/no). */
+    private static Result comeback(SortedSet<LocalDate> days, int n) {
+        if (n <= 0) return Result.noData();
+        LocalDate prev = null;
+        for (LocalDate d : days) {
+            if (prev != null && java.time.temporal.ChronoUnit.DAYS.between(prev, d) - 1 >= n) return Result.unlocked(d, null, null);
+            prev = d;
+        }
+        return Result.locked(null, null);
+    }
+
+    /**
+     * Workouts asignados completados seguidos, en orden de fecha programada. Uno con fecha pasada sin completar rompe la
+     * racha; los de hoy en adelante sin completar no cuentan (aún se pueden hacer).
+     */
+    private static Result consecutiveWorkouts(Activity act, int n) {
+        if (n <= 0) return Result.noData();
+        LocalDate today = act.today();
+        List<WorkoutAssignment> list = act.assignments().stream()
+                .sorted(Comparator.comparing(WorkoutAssignment::getScheduledDate).thenComparing(WorkoutAssignment::getId)).toList();
+        int run = 0, best = 0;
+        for (WorkoutAssignment w : list) {
+            if (w.getCompletedDate() != null) {
+                run++;
+                best = Math.max(best, run);
+                if (run >= n) return Result.unlocked(w.getCompletedDate(), n, n);
+            } else if (w.getScheduledDate().isBefore(today)) {
+                run = 0;
+            }
+        }
+        return Result.locked(best, n);
+    }
+
+    /** Días del diario en la ventana que cumplen la condición. */
+    private static TreeSet<LocalDate> diaryDays(Activity act, LocalDate from, LocalDate to, java.util.function.Predicate<ClientDailyLog> match) {
+        TreeSet<LocalDate> out = new TreeSet<>();
+        for (ClientDailyLog x : act.diary()) if (!x.getLogDate().isBefore(from) && !x.getLogDate().isAfter(to) && match.test(x)) out.add(x.getLogDate());
+        return out;
+    }
+
+    /** n semanas seguidas (lunes a domingo) con algún día del conjunto. */
+    private static Result weekStreak(SortedSet<LocalDate> days, int n) {
+        if (n <= 0) return Result.noData();
+        TreeMap<LocalDate, LocalDate> firstByWeek = new TreeMap<>();
+        for (LocalDate d : days) firstByWeek.putIfAbsent(d.with(DayOfWeek.MONDAY), d);
+        int run = 0, best = 0;
+        LocalDate prev = null;
+        for (var e : firstByWeek.entrySet()) {
+            run = prev != null && prev.plusWeeks(1).equals(e.getKey()) ? run + 1 : 1;
+            best = Math.max(best, run);
+            if (run >= n) return Result.unlocked(e.getValue(), n, n);
+            prev = e.getKey();
+        }
+        return Result.locked(best, n);
+    }
+
+    /** Una noche con ≥ n minutos. Progreso: la noche más larga (en minutos). */
+    private static Result sleepNight(Activity act, LocalDate from, LocalDate to, int n) {
+        if (n <= 0) return Result.noData();
+        int best = 0;
+        for (ClientDailyLog x : act.diary()) {
+            if (x.getSleepMinutes() == null || x.getLogDate().isBefore(from) || x.getLogDate().isAfter(to)) continue;
+            if (x.getSleepMinutes() >= n) return Result.unlocked(x.getLogDate(), n, n);
+            best = Math.max(best, x.getSleepMinutes());
+        }
+        return Result.locked(best, n);
+    }
+
+    /** Tras ≥ 3 días seguidos con ánimo "Mal" (1), n días seguidos con ánimo ≥ 4. Sí/no. */
+    private static Result moodComeback(Activity act, LocalDate from, LocalDate to, int n) {
+        if (n <= 0) return Result.noData();
+        int low = 0, good = 0;
+        boolean hadLow = false;
+        LocalDate prev = null;
+        for (ClientDailyLog x : act.diary()) {
+            if (x.getMood() == null || x.getLogDate().isBefore(from) || x.getLogDate().isAfter(to)) continue;
+            boolean consecutive = prev != null && prev.plusDays(1).equals(x.getLogDate());
+            if (x.getMood() == 1) {
+                low = consecutive ? low + 1 : 1;
+                good = 0;
+                if (low >= 3) hadLow = true;
+            } else if (x.getMood() >= 4) {
+                low = 0;
+                good = consecutive ? good + 1 : 1;
+                if (hadLow && good >= n) return Result.unlocked(x.getLogDate(), null, null);
+            } else {
+                low = 0;
+                good = 0;
+            }
+            prev = x.getLogDate();
+        }
+        return Result.locked(null, null);
+    }
+
     // ---------- Respuesta ----------
 
     private ClientAchievementsDto toDto(Evaluation ev) {
@@ -390,28 +625,40 @@ public class AchievementProgressService {
         List<ClientAchievementDto> all = new ArrayList<>();
         for (AchievementCategory c : ev.categories()) {
             List<ClientAchievementDto> list = ev.byCategory().getOrDefault(c.getId(), List.of()).stream()
-                    .map(a -> dto(a, ev.results().get(a.getId()), ev.unlocked().get(a.getId()))).toList();
+                    .map(a -> dto(a, c, ev.results().get(a.getId()), ev.unlocked().get(a.getId()))).toList();
             if (list.isEmpty()) continue;
             all.addAll(list);
-            cats.add(new ClientAchievementCategoryDto(c.getId(), c.getName(), c.getIcon(), list));
+            int soon = (int) list.stream().filter(a -> COMING_SOON.equals(a.status())).count();
+            int done = (int) list.stream().filter(a -> UNLOCKED.equals(a.status())).count();
+            cats.add(new ClientAchievementCategoryDto(c.getId(), c.getName(), c.getIcon(), list, c.getEmoji(), done, list.size() - soon, soon));
         }
         List<ClientAchievementDto> almost = all.stream()
                 .filter(a -> LOCKED.equals(a.status()) && a.percent() != null && a.percent() > 0)
                 .sorted(Comparator.comparing(ClientAchievementDto::percent).reversed()).limit(3).toList();
         int unlockedCount = (int) all.stream().filter(a -> UNLOCKED.equals(a.status())).count();
+        int comingSoon = (int) all.stream().filter(a -> COMING_SOON.equals(a.status())).count();
         return new ClientAchievementsDto(new ClientStatsDto(s.getWorkoutsCompleted(), s.getActiveDays(), s.getCurrentStreak(),
                 s.getBestStreak(), s.getTotalSets(), s.getTotalReps(), s.getTotalVolumeKg(), s.getLastActivity()),
                 points, level, LEVEL_NAMES.get(Math.min(level, LEVEL_NAMES.size()) - 1), points % XP_PER_LEVEL, XP_PER_LEVEL,
-                unlockedCount, all.size(), almost, cats);
+                unlockedCount, all.size() - comingSoon, almost, cats, comingSoon);
     }
 
-    /** Un desbloqueo guardado manda sobre el cálculo de hoy: un logro conseguido no se pierde. */
-    private ClientAchievementDto dto(Achievement a, Result r, AchievementUnlock u) {
+    /**
+     * Un desbloqueo guardado manda sobre el cálculo de hoy: un logro conseguido no se pierde. Emoji: el del logro o el de
+     * su sección (la foto, badgeUrl, tiene prioridad en pantalla). "Próximamente": sin progreso, sin fecha.
+     */
+    private ClientAchievementDto dto(Achievement a, AchievementCategory c, Result r, AchievementUnlock u) {
+        String emoji = a.getEmoji() != null ? a.getEmoji() : c.getEmoji();
+        if (a.isComingSoon()) {
+            return new ClientAchievementDto(a.getId(), a.getName(), a.getDescription(), a.getGroupLabel(), a.getBadge(),
+                    files.url(a.getBadgeFileId()), a.getTier(), a.getPoints(), COMING_SOON, null, null, null, null, emoji, c.getId());
+        }
         String status = u != null ? UNLOCKED : r.status();
         Integer percent = u != null ? Integer.valueOf(100) : percent(r);
         return new ClientAchievementDto(a.getId(), a.getName(), a.getDescription(), a.getGroupLabel(), a.getBadge(),
-                files.url(a.getBadgeFileId()), a.getTier(), a.getPoints(), status, u != null ? u.getUnlockedOn() : null,
-                u != null && r.progress() == null ? null : r.progress(), r.target(), percent);
+                files.url(a.getBadgeFileId()), a.getTier(), u != null ? u.getPoints() : a.getPoints(), status,
+                u != null ? u.getUnlockedOn() : null, u != null && r.progress() == null ? null : r.progress(), r.target(), percent,
+                emoji, c.getId());
     }
 
     private static Integer percent(Result r) {

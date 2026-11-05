@@ -501,7 +501,8 @@ public final class Dtos {
     public record CopyResultDto(String kind, Long id, String name) {}
 
     public record CategoryRequest(@NotBlank @Size(max = 80) String name, @Size(max = 500) String description,
-                                  @NotNull @Pattern(regexp = "ALL|TAGS|HIDDEN") String visibility, @Size(max = 50) List<Long> tagIds) {}
+                                  @NotNull @Pattern(regexp = "ALL|TAGS|HIDDEN") String visibility, @Size(max = 50) List<Long> tagIds,
+                                  @Size(max = 16) String emoji) {}
     public record AchievementRequest(@NotNull Long categoryId, @NotBlank @Size(max = 80) String name, @Size(max = 500) String description,
                                      Long badgeFileId,
                                      @NotNull @Pattern(regexp = "WEIGHT_EXERCISE|TOTAL_REPS|STREAK|BODY_WEIGHT|TIME_WITH_YOU") String conditionType,
@@ -509,14 +510,18 @@ public final class Dtos {
                                      @Min(1) @Max(100000) Integer reps, @Min(2) @Max(365) Integer days,
                                      @DecimalMin("20") @DecimalMax("500") BigDecimal targetKg, @Min(1) @Max(120) Integer months,
                                      @NotNull @Pattern(regexp = "UNLIMITED|DATE_RANGE|AFTER_ASSIGNMENT") String durationType,
-                                     LocalDate startDate, LocalDate endDate, @Min(1) @Max(365) Integer daysAfter) {}
+                                     LocalDate startDate, LocalDate endDate, @Min(1) @Max(365) Integer daysAfter,
+                                     // Logros v2 (api-logros-v2.md §2): sin points se usan 10 (clientes antiguos de la API).
+                                     Integer points, @Size(max = 16) String emoji) {}
     public record AchievementDto(Long id, Long categoryId, String name, String description, String groupLabel, String badge,
                                  Long badgeFileId, String badgeUrl, String tier, String conditionType, Long exerciseId, String exerciseName,
                                  BigDecimal weightKg, Integer reps, Integer days, BigDecimal targetKg, Integer months,
                                  String durationType, LocalDate startDate, LocalDate endDate, Integer daysAfter,
-                                 boolean system, boolean hidden, LocalDateTime createdAt) {}
+                                 boolean system, boolean hidden, LocalDateTime createdAt,
+                                 int points, String emoji, boolean comingSoon, boolean clientVisible, String metric, BigDecimal threshold) {}
     public record CategoryDto(Long id, String name, String description, String icon, boolean system, String visibility,
-                              List<Long> tagIds, LocalDateTime createdAt, List<AchievementDto> achievements) {}
+                              List<Long> tagIds, LocalDateTime createdAt, List<AchievementDto> achievements,
+                              String emoji, boolean clientVisible, int position) {}
     public record HiddenRequest(boolean hidden) {}
 
     public record ErrorResponse(Instant timestamp, int status, String error, String message) {}
@@ -581,11 +586,16 @@ public final class Dtos {
     /** status: UNLOCKED | LOCKED | NO_DATA. progress/target nulos cuando no se pueden medir. */
     public record ClientAchievementDto(Long id, String name, String description, String groupLabel, String badge, String badgeUrl,
                                        String tier, int points, String status, LocalDate unlockedOn, BigDecimal progress,
-                                       BigDecimal target, Integer percent) {}
-    public record ClientAchievementCategoryDto(Long id, String name, String icon, List<ClientAchievementDto> achievements) {}
+                                       BigDecimal target, Integer percent,
+                                       // v2 (api-logros-v2.md §3): emoji resuelto (logro o su categoría) y su sección.
+                                       String emoji, Long categoryId) {}
+    /** totalCount no cuenta los COMING_SOON (api-logros-v2.md §3.2). */
+    public record ClientAchievementCategoryDto(Long id, String name, String icon, List<ClientAchievementDto> achievements,
+                                               String emoji, int unlockedCount, int totalCount, int comingSoonCount) {}
     public record ClientAchievementsDto(ClientStatsDto stats, int points, int level, String levelName, int xpInLevel,
                                         int xpForNextLevel, int unlockedCount, int totalCount,
-                                        List<ClientAchievementDto> almost, List<ClientAchievementCategoryDto> categories) {}
+                                        List<ClientAchievementDto> almost, List<ClientAchievementCategoryDto> categories,
+                                        int comingSoonCount) {}
 
     // ---- Asistente de bienvenida del cliente (docs/api-onboarding.md) ----
     /**
