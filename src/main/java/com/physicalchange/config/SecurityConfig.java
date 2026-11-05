@@ -41,6 +41,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/clients", "/api/clients/profiles", "/api/clients/{id}", "/api/clients/{id}/assignments")
                     .hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 .requestMatchers("/api/workouts/**").hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
+                // Entrenamiento automático (T250): el servicio exige al colaborador su cliente asignado y "asignar rutinas".
+                .requestMatchers("/api/clients/paid-without-training", "/api/clients/{id}/program-assignments")
+                    .hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")
                 // Generador de contenido (ADR-014 §9): el servicio exige al colaborador el permiso can_use_content;
                 // gestionar cuentas y la IA quedan solo para ADMIN y TRAINER (@PreAuthorize en los controladores).
                 .requestMatchers("/api/content/**").hasAnyRole("ADMIN", "TRAINER", "COLLABORATOR")

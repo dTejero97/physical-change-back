@@ -67,6 +67,11 @@ public class MailService {
         send(to, subject, "Hola " + name + ",", message, null, null);
     }
 
+    /** Nuevo cliente por suscripción (T250, docs/api-entrenamiento-automatico.md §4), con botón a "Mis clientes". */
+    public void newSubscriber(String to, String name, String subject, String message) {
+        send(to, subject, "Hola " + name + ",", message, "Ver mis clientes", publicUrl + "/clientes");
+    }
+
     private void send(String to, String subject, String greeting, String body, String action, String link) {
         String text = greeting + "\n\n" + body + (link == null ? "" : "\n\n" + link)
                 + "\n\n¿Dudas? Escríbenos a " + support + "\n— " + BRAND;

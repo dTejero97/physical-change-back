@@ -11,6 +11,8 @@ public interface ClientSubscriptionRepository extends JpaRepository<ClientSubscr
     boolean existsByClientIdAndPlanIdAndStatusIn(Long clientId, Long planId, Collection<String> statuses);
     Optional<ClientSubscription> findByStripeSubscriptionId(String stripeSubscriptionId);
     List<ClientSubscription> findByClientIdOrderByCreatedAtDesc(Long clientId);
+    /** "Pagados sin entrenamiento" (T250): suscripciones vigentes de estos clientes, la más antigua primero. */
+    List<ClientSubscription> findByClientIdInAndStatusInOrderByCreatedAtAsc(Collection<Long> clientIds, Collection<String> statuses);
     boolean existsByPlanId(Long planId);
     /** Activas con algún periodo ya vencido sin comprobante (puesta al día, ADR-004 §4). */
     List<ClientSubscription> findByTrainerIdAndStatusAndNextPeriodStartLessThanEqual(Long trainerId, String status, LocalDate day);

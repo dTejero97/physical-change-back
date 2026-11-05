@@ -34,9 +34,13 @@ public class CatalogService {
     private final FileService files;
     private final AccessService access;
 
+    private final LibraryProgramRepository libraryPrograms;
+
     public CatalogService(ProductRepository p, SubscriptionPlanRepository pl, BonusDefinitionRepository b, ReceiptLineRepository l,
-                          ClientSubscriptionRepository s, SessionTypeRepository st, ClientTagRepository t, FileService f, AccessService a) {
+                          ClientSubscriptionRepository s, SessionTypeRepository st, ClientTagRepository t, FileService f, AccessService a,
+                          LibraryProgramRepository lp) {
         products = p; plans = pl; bonuses = b; lines = l; subscriptions = s; sessionTypes = st; tags = t; files = f; access = a;
+        libraryPrograms = lp;
     }
 
     // ---------- Productos ----------
@@ -172,6 +176,10 @@ public class CatalogService {
         x.getAutoTagIds().clear();
         x.getAutoTagIds().addAll(checkTags(r.autoTagIds()));
         checkBonuses(r.bonuses());
+        // Programa que se asigna solo al contratar (T248): del mismo profesional que el plan; ajeno o inexistente → 404.
+        if (r.programId() != null && libraryPrograms.findById(r.programId()).filter(p -> p.getTrainerId().equals(x.getTrainerId())).isEmpty())
+            throw new NotFoundException("Programa no encontrado");
+        x.setProgramId(r.programId());
     }
 
     SubscriptionPlan ownedPlan(Long id) {
@@ -184,11 +192,16 @@ public class CatalogService {
         Map<Long, List<BonusDefinitionDto>> b = bonusDtos(ids.isEmpty() ? List.of() : bonuses.findByPlanIdIn(ids), BonusDefinition::getPlanId);
         Map<Long, Long> sales = counts(ids.isEmpty() ? List.of() : lines.salesByPlan(ids));
         Map<Long, Long> active = counts(ids.isEmpty() ? List.of() : subscriptions.countActiveByPlan(ids));
+        Set<Long> programIds = list.stream().map(SubscriptionPlan::getProgramId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> programNames = programIds.isEmpty() ? Map.of() : libraryPrograms.findAllById(programIds).stream()
+                .collect(Collectors.toMap(LibraryProgram::getId, LibraryProgram::getName));
         return list.stream().map(x -> {
             List<BonusDefinitionDto> bs = b.getOrDefault(x.getId(), List.of());
+            String programName = x.getProgramId() == null ? null : programNames.get(x.getProgramId());
             return new SubscriptionPlanDto(x.getId(), x.getName(), x.getDescription(), x.getPrice(), x.getTaxRate(), x.getVisibility(), x.getCover(),
                     files.coverUrl(x.getCover()), bs, sorted(x.getAutoTagIds()), !x.getAutoTagIds().isEmpty(), !bs.isEmpty(),
-                    sales.getOrDefault(x.getId(), 0L), x.isArchived(), x.getCreatedAt(), x.getFrequency(), active.getOrDefault(x.getId(), 0L));
+                    sales.getOrDefault(x.getId(), 0L), x.isArchived(), x.getCreatedAt(), x.getFrequency(), active.getOrDefault(x.getId(), 0L),
+                    programName == null ? null : x.getProgramId(), programName);
         }).toList();
     }
 
