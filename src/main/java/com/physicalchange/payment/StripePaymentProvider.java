@@ -76,6 +76,11 @@ public class StripePaymentProvider implements PaymentProvider {
     }
 
     @Override
+    public JsonNode retrieveCheckout(String sessionId) {
+        return call("GET", "checkout/sessions/" + enc(sessionId), Map.of(), null);
+    }
+
+    @Override
     public void expireCheckout(String sessionId) {
         try {
             call("POST", "checkout/sessions/" + enc(sessionId) + "/expire", Map.of(), null);
@@ -124,7 +129,10 @@ public class StripePaymentProvider implements PaymentProvider {
             JsonNode node = res.body() == null || res.body().isBlank() ? json.createObjectNode() : json.readTree(res.body());
             if (res.statusCode() / 100 != 2) {
                 String code = node.path("error").path("code").asText(node.path("error").path("type").asText("desconocido"));
-                log.warn("Stripe respondió {} en {} {} (error: {})", res.statusCode(), method, path.replaceAll("/[a-z]+_[A-Za-z0-9_]+", "/…"), code);
+                // message/param los redacta Stripe (p. ej. "Invalid URL…", param=success_url); no contienen claves ni datos de tarjeta.
+                log.warn("Stripe respondió {} en {} {} (error: {}, param: {}, mensaje: {})", res.statusCode(), method,
+                        path.replaceAll("/[a-z]+_[A-Za-z0-9_]+", "/…"), code,
+                        node.path("error").path("param").asText("-"), node.path("error").path("message").asText("-"));
                 throw new PaymentException(502, "Stripe ha rechazado la operación (" + code + ")");
             }
             return node;

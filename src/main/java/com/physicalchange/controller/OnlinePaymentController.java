@@ -36,7 +36,10 @@ public class OnlinePaymentController {
     public List<OrderDto> orders() { return svc.myOrders(); }
 
     @GetMapping("/api/me/orders/{id}") @PreAuthorize("hasRole('CLIENT')")
-    public OrderDto order(@PathVariable Long id) { return svc.myOrder(id); }
+    public OrderDto order(@PathVariable Long id) {
+        svc.reconcileMine(id);   // T245: si el webhook no ha llegado, se pregunta a Stripe
+        return svc.myOrder(id);
+    }
 
     @GetMapping("/api/me/subscriptions") @PreAuthorize("hasRole('CLIENT')")
     public List<MySubscriptionDto> subscriptions() { return svc.mySubscriptions(); }

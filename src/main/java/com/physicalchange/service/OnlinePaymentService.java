@@ -51,12 +51,13 @@ public class OnlinePaymentService {
     private final CatalogService catalog;
     private final AccessService access;
     private final Clock clock;
+    private final StripeReconciler reconciler;
     private final String publicUrl;
 
     public OnlinePaymentService(PaymentProvider pay, PurchaseOrderRepository o, ReceiptRepository r, ReceiptLineRepository l,
                                 SubscriptionPlanRepository p, ClientSubscriptionRepository s, UserRepository u, CatalogService c,
-                                AccessService a, Clock clk, @Value("${app.public-url}") String publicUrl) {
-        payments = pay; orders = o; receipts = r; lines = l; plans = p; subscriptions = s; users = u; catalog = c; access = a; clock = clk;
+                                AccessService a, Clock clk, StripeReconciler rc, @Value("${app.public-url}") String publicUrl) {
+        payments = pay; orders = o; receipts = r; lines = l; plans = p; subscriptions = s; users = u; catalog = c; access = a; clock = clk; reconciler = rc;
         this.publicUrl = publicUrl.replaceAll("/+$", "");
     }
 
@@ -127,7 +128,17 @@ public class OnlinePaymentService {
                 o.getAmount(), shownStatus(o, now), o.getReceiptId(), o.getPlanId(), o.getCreatedAt(), o.getPaidAt())).toList();
     }
 
-    /** Un pedido propio (para la vuelta de Checkout: el estado real lo pone el webhook). Ajeno → 404. */
+    /**
+     * Antes de devolver un pedido propio PENDING, lo concilia con Stripe por si el webhook no ha llegado (T245).
+     * Sin transacción: la llamada a Stripe no debe retener conexiones de la BD. Ajeno o inexistente: no hace nada
+     * (el 404 lo da {@link #myOrder}). Un fallo de Stripe nunca llega al cliente.
+     */
+    public void reconcileMine(Long id) {
+        AppUser me = client();
+        orders.findById(id).filter(o -> o.getClientId().equals(me.getId())).ifPresent(reconciler::reconcileIfDue);
+    }
+
+    /** Un pedido propio (para la vuelta de Checkout: el estado lo pone el webhook o la conciliación). Ajeno → 404. */
     @Transactional(readOnly = true)
     public OrderDto myOrder(Long id) {
         return myOrders().stream().filter(o -> o.id().equals(id)).findFirst().orElseThrow(() -> new NotFoundException("Pedido no encontrado"));

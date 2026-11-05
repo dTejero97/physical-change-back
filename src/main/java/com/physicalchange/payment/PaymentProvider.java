@@ -36,6 +36,13 @@ public interface PaymentProvider {
 
     CheckoutSession createCheckout(CheckoutRequest r);
 
+    /**
+     * Lee una sesión de Checkout tal como la devuelve Stripe (id, status, payment_status, amount_total, currency,
+     * subscription, payment_intent, livemode): el mismo objeto que llega en data.object de checkout.session.*.
+     * Para conciliar cuando no llega el webhook (T245). Error de Stripe o de red → PaymentException.
+     */
+    JsonNode retrieveCheckout(String sessionId);
+
     /** Caduca una sesión abierta para que no se pueda pagar dos veces lo mismo. No falla si ya estaba cerrada. */
     void expireCheckout(String sessionId);
 

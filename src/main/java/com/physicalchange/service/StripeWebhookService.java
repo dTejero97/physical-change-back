@@ -16,7 +16,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Webhook de Stripe (ADR-009 §4–6): la ÚNICA vía por la que un pago online se da por cobrado. La firma se verifica antes
+ * Webhook de Stripe (ADR-009 §4–6): la vía principal por la que un pago online se da por cobrado; la otra es la
+ * conciliación (T245, {@link #reconcile}), que aplica lo mismo con la sesión leída del servidor de Stripe cuando el
+ * webhook no llega. Ambas bloquean la fila del pedido y solo actúan sobre pedidos PENDING. La firma se verifica antes
  * de leer el cuerpo (PaymentProvider.verifyWebhook). Cada evento se aplica una vez (tabla stripe_event): si Stripe lo
  * reintenta, se responde 200 sin repetir el efecto. Un error inesperado responde 500 y Stripe lo reintentará.
  *
@@ -74,10 +76,44 @@ public class StripeWebhookService {
         }
     }
 
+    /**
+     * Conciliación (T245): aplica a un pedido PENDING la sesión de Checkout leída de Stripe por el servidor, igual que
+     * haría su webhook. Pagada → como checkout.session.completed; caducada → EXPIRED; abierta o sin pagar → nada.
+     * La sesión debe ser la del pedido y del mismo modo (test/real) que la clave. Devuelve true si cambió el pedido.
+     */
+    @Transactional
+    public boolean reconcile(Long orderId, JsonNode session) {
+        String sessionId = text(session.path("id"));
+        PurchaseOrder o = sessionId == null ? null : orders.lockByStripeSessionId(sessionId).orElse(null);
+        if (o == null || !o.getId().equals(orderId)) {
+            log.warn("Stripe: conciliación del pedido {} con una sesión que no es la suya; se ignora", orderId);
+            return false;
+        }
+        if (!"PENDING".equals(o.getStatus())) return false;
+        if (session.has("livemode") && session.path("livemode").asBoolean() != "LIVE".equals(payments.mode())) {
+            log.warn("Stripe: conciliación del pedido {} ignorada: livemode={} no coincide con la clave ({})", orderId,
+                    session.path("livemode").asBoolean(), payments.mode());
+            return false;
+        }
+        String status = session.path("status").asText(""), paymentStatus = session.path("payment_status").asText("");
+        if ("complete".equals(status) && "paid".equals(paymentStatus)) {
+            log.info("Stripe: pedido {} conciliado sin webhook (sesión pagada)", orderId);
+            fulfil(session);
+            return true;
+        }
+        if ("expired".equals(status)) {
+            log.info("Stripe: pedido {} conciliado sin webhook (sesión caducada)", orderId);
+            o.setStatus("EXPIRED");
+            return true;
+        }
+        return false;
+    }
+
     // ---------- Checkout ----------
 
     private void fulfil(JsonNode session) {
         PurchaseOrder o = order(session).orElse(null);
+        // Ya cobrado por el webhook o por la conciliación (el que llega segundo lo ve tras esperar al bloqueo): nada que hacer.
         if (o == null || "PAID".equals(o.getStatus()) || "REFUNDED".equals(o.getStatus())) return;
         // El importe lo fijamos nosotros al crear la sesión; si no coincide, no se concede nada.
         long paid = session.path("amount_total").asLong(-1);
@@ -124,7 +160,8 @@ public class StripeWebhookService {
 
     private Optional<PurchaseOrder> order(JsonNode session) {
         String id = text(session.path("id"));
-        Optional<PurchaseOrder> o = id == null ? Optional.empty() : orders.findByStripeSessionId(id);
+        // Con bloqueo de la fila: webhook y conciliación del mismo pedido se atienden de uno en uno (T245).
+        Optional<PurchaseOrder> o = id == null ? Optional.empty() : orders.lockByStripeSessionId(id);
         if (o.isEmpty()) log.info("Stripe: sesión de Checkout sin pedido propio; se ignora");
         return o;
     }
