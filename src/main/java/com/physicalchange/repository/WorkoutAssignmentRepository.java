@@ -27,4 +27,15 @@ public interface WorkoutAssignmentRepository extends JpaRepository<WorkoutAssign
     /** Asignaciones de las rutinas de un entrenador (la rutina es la que tiene el dueño). */
     @Query("select a from WorkoutAssignment a, Workout w where a.workoutId = w.id and w.trainerId = :t")
     List<WorkoutAssignment> findByTrainer(@Param("t") Long trainerId);
+
+    // ---- Entrenamiento automático (T250) ----
+    long countByProgramAssignmentId(Long programAssignmentId);
+
+    /** Clientes de la lista que tienen alguna asignación desde `from` (incluido): esos ya tienen entrenamiento. */
+    @Query("select distinct a.clientId from WorkoutAssignment a where a.clientId in :ids and a.scheduledDate >= :from")
+    List<Long> clientsWithTrainingFrom(@Param("ids") Collection<Long> clientIds, @Param("from") LocalDate from);
+
+    /** Última fecha asignada por cliente: filas [clientId, max(scheduledDate)]. */
+    @Query("select a.clientId, max(a.scheduledDate) from WorkoutAssignment a where a.clientId in :ids group by a.clientId")
+    List<Object[]> lastScheduledDates(@Param("ids") Collection<Long> clientIds);
 }

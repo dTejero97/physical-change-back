@@ -328,6 +328,10 @@ class StripePaymentFlowTest {
         ClientSubscription s = subscriptions.findByStripeSubscriptionId(subId).orElseThrow();
         assertEquals("ACTIVE", s.getStatus());
         assertEquals(s.getId(), orders.findById(order).orElseThrow().getSubscriptionId());
+        // T250: el alta por pago también avisa al profesional (plan sin programa → "Aún no tiene entrenamiento").
+        JsonNode bell = send("GET", "/api/notifications", trainer, null, 200);
+        assertTrue(java.util.stream.StreamSupport.stream((bell.has("content") ? bell.get("content") : bell).spliterator(), false)
+                .anyMatch(n -> "SUBSCRIPTION_STARTED".equals(n.get("type").asText()) && n.get("refId").asLong() == clientId));
 
         // El webhook llega después: 200, sin segunda suscripción ni segundo comprobante.
         String late = sessionCompleted("evt_" + UUID.randomUUID(), session, 4900, "subscription")

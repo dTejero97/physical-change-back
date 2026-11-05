@@ -247,13 +247,21 @@ public final class Dtos {
                                           @NotNull @DecimalMin("0.01") @DecimalMax("100000") BigDecimal price, @NotNull Integer taxRate,
                                           @Pattern(regexp = "HIDDEN|ALL") String visibility, @NotBlank @Size(max = 300) String cover,
                                           @Size(max = 5) List<@Valid @NotNull BonusDefinitionRequest> bonuses, List<Long> autoTagIds,
-                                          @NotNull @Pattern(regexp = "WEEKLY|MONTHLY|QUARTERLY|SEMIANNUAL|ANNUAL") String frequency) {}
+                                          @NotNull @Pattern(regexp = "WEEKLY|MONTHLY|QUARTERLY|SEMIANNUAL|ANNUAL") String frequency,
+                                          Long programId) {}
     public record ProductDto(Long id, String name, String description, BigDecimal price, int taxRate, String visibility, String cover,
                              String coverUrl, List<BonusDefinitionDto> bonuses, List<Long> autoTagIds, boolean automated, boolean hasBonus,
                              long sales, boolean archived, LocalDateTime createdAt) {}
     public record SubscriptionPlanDto(Long id, String name, String description, BigDecimal price, int taxRate, String visibility, String cover,
                                       String coverUrl, List<BonusDefinitionDto> bonuses, List<Long> autoTagIds, boolean automated, boolean hasBonus,
-                                      long sales, boolean archived, LocalDateTime createdAt, String frequency, long activeSubscriptions) {}
+                                      long sales, boolean archived, LocalDateTime createdAt, String frequency, long activeSubscriptions,
+                                      Long programId, String programName) {}
+    // ---- Entrenamiento automático al contratar (docs/api-entrenamiento-automatico.md, T248) ----
+    public record ProgramAssignmentRequest(@NotNull Long programId, @NotNull LocalDate startDate) {}
+    public record ProgramAssignmentDto(Long id, Long programId, String programName, Long clientId, LocalDate startDate, LocalDate endDate,
+                                       int workouts, Integer skipped, String origin, Long subscriptionId, LocalDateTime createdAt) {}
+    public record PaidWithoutTrainingDto(Long clientId, String clientName, String planName, Long subscriptionId, String subscriptionStatus,
+                                         LocalDate subscribedAt, LocalDate lastTrainingDate, String reason) {}
     public record CouponRequest(@NotBlank @Size(min = 3, max = 30) String code, @Size(max = 300) String description,
                                 @NotNull @Pattern(regexp = "PERCENT|AMOUNT") String type,
                                 @NotNull @DecimalMin("0.01") @DecimalMax("100000") BigDecimal value,

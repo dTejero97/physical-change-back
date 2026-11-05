@@ -25,6 +25,8 @@ public class NotificationService {
     public static final String CONTENT_POST_DUE = "CONTENT_POST_DUE";
     public static final String CONTENT_POST_FAILED = "CONTENT_POST_FAILED";
     public static final String SOCIAL_ACCOUNT_ATTENTION = "SOCIAL_ACCOUNT_ATTENTION";
+    /** Un cliente empieza una suscripción (T250): programa asignado, sin programa o fallo al asignarlo. */
+    public static final String SUBSCRIPTION_STARTED = "SUBSCRIPTION_STARTED";
     private static final int PAGE = 50;
 
     private final NotificationRepository repo;

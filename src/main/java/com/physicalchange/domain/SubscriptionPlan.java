@@ -18,6 +18,8 @@ public class SubscriptionPlan {
     @Column(nullable = false, precision = 10, scale = 2) private BigDecimal price;
     @Column(name = "TAX_RATE", nullable = false) private Short taxRate;
     @Column(nullable = false, length = 12) private String frequency;
+    /** Programa de la librería que se asigna solo al empezar la suscripción (V27, T248); null = ninguno. */
+    @Column(name = "PROGRAM_ID") private Long programId;
     @Column(nullable = false, length = 10) private String visibility = "HIDDEN";
     @Column(nullable = false, length = 300) private String cover;
     @Column(nullable = false) private boolean archived;
@@ -41,6 +43,8 @@ public class SubscriptionPlan {
     public Short getTaxRate() { return taxRate; }
     public void setTaxRate(Short t) { this.taxRate = t; }
     public String getFrequency() { return frequency; }
+    public Long getProgramId() { return programId; }
+    public void setProgramId(Long p) { this.programId = p; }
     public void setFrequency(String f) { this.frequency = f; }
     public String getVisibility() { return visibility; }
     public void setVisibility(String v) { this.visibility = v; }

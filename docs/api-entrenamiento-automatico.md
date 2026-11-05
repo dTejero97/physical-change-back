@@ -1,6 +1,6 @@
 # API Entrenamiento automático al contratar (T248) — contrato
 
-Versión 0.1.0 · 2026-11-05 · Fase 11 de `../../tareas.md` · Migración prevista: **V27** (T249) · Implementación: T250
+Versión 0.1.1 · 2026-11-05 (0.1.1: cliente ajeno → 403 y `skipped` nulo al listar, ajustes de T250) · Fase 11 de `../../tareas.md` · Migración prevista: **V27** (T249) · Implementación: T250
 
 Objetivo (decidido por el usuario el 2026-11-05): cuando un cliente empieza una suscripción, ya sea por pago con Stripe o por alta manual del profesional, recibe **automáticamente** el programa de la librería vinculado al plan. El profesional recibe un aviso en la campana y por email, y ve en su Inicio a los clientes que han pagado y no tienen entrenamiento.
 
@@ -25,7 +25,7 @@ Amplía `/api/subscription-plans` (`docs/api-negocio.md`):
 
 `ProgramAssignmentDto { id, programId, programName, clientId, startDate, endDate, workouts, skipped, origin: AUTO | MANUAL, subscriptionId, createdAt }`
 - `workouts`: número de asignaciones de workout creadas.
-- `skipped`: número de elementos del programa que no se asignan (ver reglas).
+- `skipped`: número de elementos del programa que no se asignan (ver reglas). Solo en la respuesta del POST; al listar es `null`, porque el programa puede haber cambiado.
 - `endDate`: `startDate + semanas·7 − 1`.
 
 Permisos (los mismos que `POST /api/workouts/assign`): el profesional ofrece entrenamiento, el programa es suyo (o es ADMIN) y puede acceder al cliente (propio o responsable de entrenamiento, ADR-013). Un COLLABORATOR necesita el permiso "asignar rutinas". El cliente debe tener rol CLIENT.
@@ -34,7 +34,8 @@ Errores:
 
 | Caso | Respuesta |
 |---|---|
-| Programa ajeno o inexistente; cliente ajeno o inexistente | 404 |
+| Programa ajeno o inexistente; cliente inexistente | 404 |
+| Cliente ajeno (no es suyo ni asignado al colaborador) | 403, como en `POST /api/workouts/assign` |
 | `startDate` anterior a hoy | 400 |
 | Programa sin ningún elemento WORKOUT | 409 "El programa no tiene workouts que asignar" |
 

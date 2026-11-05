@@ -175,6 +175,8 @@ public class SubscriptionService {
         s = subscriptions.save(s);
         // Etiquetas automáticas del plan: al empezar (ADR-004 §3).
         if (!plan.getAutoTagIds().isEmpty()) profiles.ensure(clientId).getTagIds().addAll(plan.getAutoTagIds());
+        // Programa del plan y aviso al profesional, tras el commit y sin poder deshacer el alta (T250).
+        events.publishEvent(new SubscriptionStartedEvent(s.getId()));
         return s;
     }
 
