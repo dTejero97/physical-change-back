@@ -24,6 +24,8 @@ public class ClientSubscription {
     /** Cobrada por Stripe (V20): la puesta al día no emite pendientes; cada periodo llega pagado por webhook. */
     @Column(name = "STRIPE_SUBSCRIPTION_ID", unique = true, length = 255) private String stripeSubscriptionId;
     @Column(name = "CANCEL_AT_PERIOD_END", nullable = false) private boolean cancelAtPeriodEnd;
+    @Column(name = "STRIPE_ACCOUNT_ID", length = 255) private String stripeAccountId;
+    @Column(name = "PLATFORM_FEE_PERCENT", nullable = false, precision = 5, scale = 2) private BigDecimal platformFeePercent = BigDecimal.ZERO;
 
     public Long getId() { return id; }
     public Long getTrainerId() { return trainerId; }
@@ -48,5 +50,9 @@ public class ClientSubscription {
     public String getStripeSubscriptionId() { return stripeSubscriptionId; }
     public void setStripeSubscriptionId(String id) { this.stripeSubscriptionId = id; }
     public boolean isCancelAtPeriodEnd() { return cancelAtPeriodEnd; }
+    public String getStripeAccountId() { return stripeAccountId; }
+    public void setStripeAccountId(String s) { this.stripeAccountId = s; }
+    public BigDecimal getPlatformFeePercent() { return platformFeePercent; }
+    public void setPlatformFeePercent(BigDecimal p) { this.platformFeePercent = p; }
     public void setCancelAtPeriodEnd(boolean c) { this.cancelAtPeriodEnd = c; }
 }

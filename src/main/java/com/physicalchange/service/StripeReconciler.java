@@ -51,7 +51,7 @@ public class StripeReconciler {
         forgetOld(now);
         JsonNode session;
         try {
-            session = payments.retrieveCheckout(o.getStripeSessionId());
+            session = payments.retrieveCheckout(o.getStripeSessionId(), o.getStripeAccountId());
         } catch (PaymentException e) {
             log.warn("Stripe: no se ha podido conciliar el pedido {} ({}); se reintentará", o.getId(), e.getMessage());
             return false;

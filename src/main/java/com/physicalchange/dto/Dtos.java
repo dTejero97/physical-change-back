@@ -248,14 +248,15 @@ public final class Dtos {
                                           @Pattern(regexp = "HIDDEN|ALL") String visibility, @NotBlank @Size(max = 300) String cover,
                                           @Size(max = 5) List<@Valid @NotNull BonusDefinitionRequest> bonuses, List<Long> autoTagIds,
                                           @NotNull @Pattern(regexp = "WEEKLY|MONTHLY|QUARTERLY|SEMIANNUAL|ANNUAL") String frequency,
-                                          Long programId) {}
+                                          Long programId,
+                                          @DecimalMin("0") @DecimalMax("100") BigDecimal platformFeePercent) {}
     public record ProductDto(Long id, String name, String description, BigDecimal price, int taxRate, String visibility, String cover,
                              String coverUrl, List<BonusDefinitionDto> bonuses, List<Long> autoTagIds, boolean automated, boolean hasBonus,
                              long sales, boolean archived, LocalDateTime createdAt) {}
     public record SubscriptionPlanDto(Long id, String name, String description, BigDecimal price, int taxRate, String visibility, String cover,
                                       String coverUrl, List<BonusDefinitionDto> bonuses, List<Long> autoTagIds, boolean automated, boolean hasBonus,
                                       long sales, boolean archived, LocalDateTime createdAt, String frequency, long activeSubscriptions,
-                                      Long programId, String programName) {}
+                                      Long programId, String programName, BigDecimal platformFeePercent) {}
     // ---- Entrenamiento automático al contratar (docs/api-entrenamiento-automatico.md, T248) ----
     public record ProgramAssignmentRequest(@NotNull Long programId, @NotNull LocalDate startDate) {}
     public record ProgramAssignmentDto(Long id, Long programId, String programName, Long clientId, LocalDate startDate, LocalDate endDate,
@@ -280,11 +281,17 @@ public final class Dtos {
     public record OrderDto(Long id, String kind, String concept, BigDecimal amount, String status, Long receiptId, Long planId,
                            LocalDateTime createdAt, LocalDateTime paidAt) {}
     public record ClientPlanDto(Long id, String name, String description, BigDecimal price, int taxRate, String frequency, String coverUrl,
-                                List<BonusDefinitionDto> bonuses, boolean subscribed) {}
+                                List<BonusDefinitionDto> bonuses, boolean subscribed, boolean payable, BigDecimal platformFeePercent,
+                                BigDecimal feeAmount, BigDecimal totalPrice) {}
     public record MySubscriptionDto(Long id, Long planId, String planName, String frequency, BigDecimal price, String status,
                                     LocalDate startDate, LocalDate nextPeriodStart, boolean cancelAtPeriodEnd, boolean online) {}
     public record PortalDto(String url) {}
     public record PaymentsStatusDto(String provider, String mode, boolean webhookConfigured) {}
+    /** Cuenta Stripe del profesional (ADR-018). Nunca incluye el id de cuenta ni claves. */
+    public record StripeAccountDto(String accountType, String status, boolean chargesEnabled, boolean payoutsEnabled, boolean detailsSubmitted,
+                                   List<String> requirementsDue, LocalDateTime linkedAt) {}
+    public record StripeLinkRequest(String accountType) {}
+    public record StripeLinkDto(String url) {}
 
     // ---- Negocio: Datos de negocio (panel e informes) ----
     public record FinanceKpisDto(BigDecimal totalSold, BigDecimal subscriptionSales, BigDecimal productSales, BigDecimal receiptsCreated, BigDecimal voidedAmount) {}

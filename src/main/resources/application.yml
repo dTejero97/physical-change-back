@@ -26,6 +26,7 @@ spring:
 app:
   timezone: ${APP_TIMEZONE:Europe/Madrid}   # ADR-008: zona única de la plataforma para "hoy" y "ahora" (T201)
   public-url: ${PUBLIC_APP_URL:http://localhost:4200}   # URL del frontend para los enlaces de los correos (T137)
+  public-api-url: ${PUBLIC_API_URL:http://localhost:8080}   # T280: URL pública del backend (vuelta de Connect: redirect_uri de OAuth)
   mail:                                 # T137: proveedor tras una interfaz; ver MANUAL-DESPLIEGUE.md Parte 10
     provider: ${MAIL_PROVIDER:log}      # log = no envía, solo escribe en el log (desarrollo) | resend
     resend-api-key: ${RESEND_API_KEY:}  # secreto: solo en Render
@@ -36,6 +37,8 @@ app:
     stripe:
       secret-key: ${STRIPE_SECRET_KEY:}           # secreto: sk_test_… en pruebas, sk_live_… en real; solo en Render
       webhook-secret: ${STRIPE_WEBHOOK_SECRET:}   # secreto: whsec_… del endpoint /api/public/stripe/webhook
+      connect-webhook-secret: ${STRIPE_CONNECT_WEBHOOK_SECRET:}   # T280 (ADR-018): whsec_… del endpoint de cuentas conectadas
+      connect-client-id: ${STRIPE_CONNECT_CLIENT_ID:}             # T280: ca_… de la plataforma para vincular cuentas Standard
       api-version: ${STRIPE_API_VERSION:2024-06-20}   # Stripe-Version de las llamadas (no cambia el formato de los webhooks)
     reconcile-interval-ms: ${PAYMENTS_RECONCILE_INTERVAL_MS:300000}   # T245: concilia con Stripe los pedidos PENDING si no llega el webhook
   jwt:

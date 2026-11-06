@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -39,15 +40,19 @@ public class StripeWebhookService {
     private final ClientSubscriptionRepository subscriptions;
     private final ReceiptService receipts;
     private final SubscriptionService subscriptionService;
+    private final TrainerStripeService connect;
 
     private final AuditService audit;
     public StripeWebhookService(PaymentProvider pay, StripeEventRepository e, PurchaseOrderRepository o, SubscriptionPlanRepository p,
-                                ClientSubscriptionRepository s, ReceiptService r, SubscriptionService ss, AuditService au) {
-        payments = pay; events = e; orders = o; plans = p; subscriptions = s; receipts = r; subscriptionService = ss; audit = au;
+                                ClientSubscriptionRepository s, ReceiptService r, SubscriptionService ss, AuditService au, TrainerStripeService ts) {
+        payments = pay; events = e; orders = o; plans = p; subscriptions = s; receipts = r; subscriptionService = ss; audit = au; connect = ts;
     }
 
     /** Verifica la firma y devuelve el evento (InvalidSignatureException → 400). Se llama antes de apply, fuera de la transacción. */
     public JsonNode verify(byte[] payload, String signature) { return payments.verifyWebhook(payload, signature); }
+
+    /** Igual que verify, para el endpoint de cuentas conectadas (ADR-018, punto 6). */
+    public JsonNode verifyConnect(byte[] payload, String signature) { return payments.verifyConnectWebhook(payload, signature); }
 
     /** Aplica un evento ya verificado, todo o nada (si falla, no queda registrado y Stripe lo reintenta). */
     @Transactional
@@ -59,7 +64,7 @@ public class StripeWebhookService {
             log.warn("Stripe: evento {} ignorado: su modo (livemode={}) no coincide con la clave ({})", id, event.path("livemode").asBoolean(), payments.mode());
             return;
         }
-        events.save(new StripeEvent(id, truncate(type, 80)));
+        events.save(new StripeEvent(id, truncate(type, 80), accountOf(event)));
         JsonNode obj = event.path("data").path("object");
         log.info("Stripe: evento {} ({})", type, id);
         switch (type) {
@@ -71,6 +76,8 @@ public class StripeWebhookService {
             case "invoice.payment_failed" -> invoiceFailed(obj);
             case "customer.subscription.updated" -> subscriptionUpdated(obj);
             case "customer.subscription.deleted" -> subscriptionDeleted(obj);
+            case "account.updated" -> connect.accountUpdated(obj);
+            case "account.application.deauthorized" -> connect.accountDeauthorized(text(event.path("account")));
             case "charge.refunded" -> refunded(obj);
             default -> { /* evento no suscrito o sin efecto: queda registrado */ }
         }
@@ -147,10 +154,11 @@ public class StripeWebhookService {
             // Contratado dos veces o plan archivado entretanto: se deja de cobrar y se avisa para reembolsar el primer pago.
             log.warn("Stripe: el pedido {} no puede activar el plan {}; se cancela la suscripción en Stripe y hay que reembolsarla",
                     o.getId(), o.getPlanId());
-            payments.cancelSubscription(stripeSubscriptionId);
+            payments.cancelSubscription(stripeSubscriptionId, o.getStripeAccountId());
             return;
         }
-        ClientSubscription s = subscriptionService.startFromStripe(o.getTrainerId(), o.getClientId(), plan, o.getAmount(), stripeSubscriptionId);
+        ClientSubscription s = subscriptionService.startFromStripe(o.getTrainerId(), o.getClientId(), plan, o.getAmount().subtract(o.getPlatformFeeAmount()),
+                stripeSubscriptionId, o.getStripeAccountId(), plan.getPlatformFeePercent());
         o.setSubscriptionId(s.getId());
     }
 
@@ -177,7 +185,7 @@ public class StripeWebhookService {
                 return;
             }
             long paid = invoice.path("amount_paid").asLong(-1);
-            if (paid >= 0 && paid != OnlinePaymentService.cents(s.getPrice()))
+            if (paid >= 0 && paid != OnlinePaymentService.cents(s.getPrice().add(OnlinePaymentService.fee(s.getPrice(), s.getPlatformFeePercent()))))
                 log.warn("Stripe: la renovación de la suscripción {} cobra {} céntimos y el precio guardado es {}; revisar en Stripe",
                         s.getId(), paid, s.getPrice());
             s.setStatus("ACTIVE");
@@ -234,6 +242,9 @@ public class StripeWebhookService {
             if ("RECEIPT".equals(o.getKind())) receipts.voidByStripeRefund(o.getReceiptId());
         }, () -> log.info("Stripe: reembolso sin pedido de pago único (p. ej. una renovación); anular el comprobante a mano"));
     }
+
+    /** Cuenta de la que llega el evento (campo "account"); vacío = endpoint de la plataforma. */
+    static String accountOf(JsonNode event) { return text(event.path("account")); }
 
     // ---------- util ----------
 

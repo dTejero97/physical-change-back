@@ -21,6 +21,9 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
     @Query("select o from PurchaseOrder o where o.stripeSessionId = :sessionId")
     Optional<PurchaseOrder> lockByStripeSessionId(@Param("sessionId") String sessionId);
 
+    /** Pedidos de una cuenta conectada en un estado (ADR-018: caducar sus sesiones al desvincularla). */
+    List<PurchaseOrder> findByStripeAccountIdAndStatus(String stripeAccountId, String status);
+
     /** Pedidos que la tarea programada concilia con Stripe (T245): pendientes, con sesión, dentro de la ventana. */
     List<PurchaseOrder> findTop20ByStatusAndStripeSessionIdIsNotNullAndCreatedAtBetweenOrderByCreatedAtAsc(
             String status, LocalDateTime from, LocalDateTime to);

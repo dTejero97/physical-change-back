@@ -171,6 +171,8 @@ public class CatalogService {
         x.setPrice(r.price().setScale(2, RoundingMode.HALF_UP));
         x.setTaxRate(taxRate(r.taxRate()));
         x.setFrequency(r.frequency());
+        // Comisión de la plataforma por plan (ADR-018): la paga el cliente encima del precio. Vacía = 0.
+        x.setPlatformFeePercent(r.platformFeePercent() == null ? BigDecimal.ZERO : r.platformFeePercent().setScale(2, RoundingMode.HALF_UP));
         x.setVisibility("ALL".equals(r.visibility()) ? "ALL" : "HIDDEN");
         x.setCover(files.checkCover(r.cover(), true));
         x.getAutoTagIds().clear();
@@ -201,7 +203,7 @@ public class CatalogService {
             return new SubscriptionPlanDto(x.getId(), x.getName(), x.getDescription(), x.getPrice(), x.getTaxRate(), x.getVisibility(), x.getCover(),
                     files.coverUrl(x.getCover()), bs, sorted(x.getAutoTagIds()), !x.getAutoTagIds().isEmpty(), !bs.isEmpty(),
                     sales.getOrDefault(x.getId(), 0L), x.isArchived(), x.getCreatedAt(), x.getFrequency(), active.getOrDefault(x.getId(), 0L),
-                    programName == null ? null : x.getProgramId(), programName);
+                    programName == null ? null : x.getProgramId(), programName, x.getPlatformFeePercent());
         }).toList();
     }
 
