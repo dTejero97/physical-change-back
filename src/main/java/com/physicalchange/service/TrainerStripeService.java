@@ -39,8 +39,9 @@ public class TrainerStripeService {
     static final String STANDARD = "STANDARD", EXPRESS = "EXPRESS";
     static final List<String> OPEN_SUBSCRIPTION_STATUSES = List.of("ACTIVE", "PAST_DUE");
     private static final SecureRandom RANDOM = new SecureRandom();
-    static final int REFRESHES_PER_HOUR = 10;
+    static final int REFRESHES_PER_HOUR = 10, LINKS_PER_HOUR = 10;
     private final RateLimiter refreshLimiter = new RateLimiter();
+    private final RateLimiter linkLimiter = new RateLimiter();
 
     private final PaymentProvider payments;
     private final TrainerStripeAccountRepository accounts;
@@ -72,6 +73,9 @@ public class TrainerStripeService {
     @Transactional
     public StripeLinkDto link(Long trainerId, String requestedType) {
         if (!payments.enabled()) throw PaymentException.disabled();
+        // Cada intento puede crear una cuenta en Stripe (Express): se limita para no generar cuentas huérfanas (T282).
+        long wait = linkLimiter.hit("stripe-link:" + trainerId, LINKS_PER_HOUR, 60 * 60_000L);
+        if (wait > 0) throw new TooManyRequestsException("Demasiados intentos de vinculación. Inténtalo dentro de un rato", wait);
         String type = requestedType == null || requestedType.isBlank() ? STANDARD : requestedType.trim().toUpperCase();
         if (!STANDARD.equals(type) && !EXPRESS.equals(type)) throw new ConflictException("Tipo de cuenta no válido (STANDARD o EXPRESS)");
         if (accounts.existsById(trainerId)) throw new ConflictException("Ya tienes una cuenta de Stripe vinculada. Desvincúlala antes");
@@ -119,6 +123,10 @@ public class TrainerStripeService {
         try {
             acc = payments.retrieveAccount(accountId);
         } catch (PaymentException e) {
+            // La autorización ya está concedida en Stripe y no la guardamos: se revoca para no dejarla huérfana (T282).
+            if (STANDARD.equals(s.getAccountType())) {
+                try { payments.deauthorize(accountId); } catch (PaymentException ignored) { /* ya se registró el fallo */ }
+            }
             return failure("oauth");
         }
         TrainerStripeAccount row = accounts.findById(trainerId).orElseGet(() -> {
