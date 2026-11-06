@@ -92,7 +92,7 @@ public class SubscriptionService {
                 .orElseThrow(() -> new NotFoundException("Suscripción no encontrada"));
         if ("CANCELLED".equals(s.getStatus())) throw new ConflictException("La suscripción ya está cancelada");
         // Cobrada por Stripe: primero se deja de cobrar allí; si Stripe falla, no se marca como cancelada.
-        if (s.getStripeSubscriptionId() != null) payments.cancelSubscription(s.getStripeSubscriptionId());
+        if (s.getStripeSubscriptionId() != null) payments.cancelSubscription(s.getStripeSubscriptionId(), s.getStripeAccountId());
         s.setStatus("CANCELLED");
         s.setCancelledAt(LocalDateTime.now());
         audit.record(AuditAction.SUBSCRIPTION_CANCELLED, "SUBSCRIPTION", s.getId(), s.getClientId(), s.getStripeSubscriptionId() != null ? "También en Stripe" : null);
@@ -131,10 +131,13 @@ public class SubscriptionService {
 
     /** Plan contratado y primer periodo cobrado: suscripción ligada a Stripe y su primer comprobante PAID. */
     @Transactional
-    public ClientSubscription startFromStripe(Long trainerId, Long clientId, SubscriptionPlan plan, BigDecimal price, String stripeSubscriptionId) {
+    public ClientSubscription startFromStripe(Long trainerId, Long clientId, SubscriptionPlan plan, BigDecimal price, String stripeSubscriptionId,
+                                                 String stripeAccountId, BigDecimal platformFeePercent) {
         ClientSubscription s = start(trainerId, clientId, plan, LocalDate.now(), null);
         s.setPrice(price);
         s.setStripeSubscriptionId(stripeSubscriptionId);
+        s.setStripeAccountId(stripeAccountId);
+        s.setPlatformFeePercent(platformFeePercent);
         audit.recordAs(null, null, AuditAction.SUBSCRIPTION_STARTED, "SUBSCRIPTION", s.getId(), clientId, plan.getName() + " · " + price + " € · con tarjeta");
         paidPeriodFromStripe(s);
         return s;

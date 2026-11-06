@@ -23,6 +23,7 @@ public class SubscriptionPlan {
     @Column(nullable = false, length = 10) private String visibility = "HIDDEN";
     @Column(nullable = false, length = 300) private String cover;
     @Column(nullable = false) private boolean archived;
+    @Column(name = "PLATFORM_FEE_PERCENT", nullable = false, precision = 5, scale = 2) private BigDecimal platformFeePercent = BigDecimal.ZERO;
     @Column(name = "CREATED_AT", nullable = false) private LocalDateTime createdAt = LocalDateTime.now();
     @Column(name = "UPDATED_AT", nullable = false) private LocalDateTime updatedAt = LocalDateTime.now();
     /** Etiquetas que se añaden al cliente al registrar la compra (única automatización, ADR-004 §3). */
@@ -52,6 +53,8 @@ public class SubscriptionPlan {
     public void setCover(String c) { this.cover = c; }
     public boolean isArchived() { return archived; }
     public void setArchived(boolean a) { this.archived = a; }
+    public BigDecimal getPlatformFeePercent() { return platformFeePercent; }
+    public void setPlatformFeePercent(BigDecimal p) { this.platformFeePercent = p; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime u) { this.updatedAt = u; }

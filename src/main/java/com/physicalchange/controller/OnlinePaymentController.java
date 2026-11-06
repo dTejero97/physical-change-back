@@ -62,6 +62,19 @@ public class OnlinePaymentController {
         return ResponseEntity.ok().build();
     }
 
+    /** Eventos de cuentas conectadas (ADR-018, punto 6): endpoint y secreto propios, mismas reglas que el de la plataforma. */
+    @PostMapping("/api/public/stripe/connect-webhook")
+    public ResponseEntity<Void> connectWebhook(@RequestBody byte[] payload, @RequestHeader(value = "Stripe-Signature", required = false) String signature) {
+        if (payload.length > MAX_WEBHOOK_BYTES) return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
+        try {
+            webhook.apply(webhook.verifyConnect(payload, signature));
+        } catch (InvalidSignatureException e) {
+            log.warn("Stripe: webhook de Connect rechazado ({})", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok().build();
+    }
+
     private com.fasterxml.jackson.databind.JsonNode verified(byte[] payload, String signature) {
         try {
             return webhook.verify(payload, signature);

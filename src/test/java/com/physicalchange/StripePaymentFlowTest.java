@@ -16,7 +16,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.*;
@@ -34,16 +36,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class StripePaymentFlowTest {
     static final String SECRET = "whsec_test_secret";
 
-    /** Simula Stripe sin red: misma verificación de firma que StripePaymentProvider. */
+    /** Simula Stripe sin red: misma verificación de firma que StripePaymentProvider. Las cuentas conectadas se simulan con un JSON. */
     static class FakeStripe implements PaymentProvider {
         final List<CheckoutRequest> checkouts = new ArrayList<>();
-        final List<String> expired = new ArrayList<>(), cancelled = new ArrayList<>();
+        final List<String> expired = new ArrayList<>(), cancelled = new ArrayList<>(), deauthorized = new ArrayList<>();
         final AtomicInteger seq = new AtomicInteger();
         final ObjectMapper json = new ObjectMapper();
+        /** Cuentas conectadas (acct_…) → JSON de Stripe; por defecto activa con datos completos. */
+        final Map<String, String> accounts = new java.util.concurrent.ConcurrentHashMap<>();
+        volatile boolean connect = true;
         @Override public boolean enabled() { return true; }
         @Override public String mode() { return "TEST"; }
         @Override public boolean webhookConfigured() { return true; }
-        @Override public String createCustomer(long userId, String email, String name) { return "cus_" + userId; }
+        @Override public boolean connectConfigured() { return connect; }
+        @Override public String createCustomer(long userId, String email, String name, String accountId) { return "cus_" + userId; }
         @Override public CheckoutSession createCheckout(CheckoutRequest r) {
             checkouts.add(r);
             String id = "cs_test_" + seq.incrementAndGet();
@@ -53,7 +59,7 @@ class StripePaymentFlowTest {
         final Map<String, String> sessions = new java.util.concurrent.ConcurrentHashMap<>();
         final Map<String, AtomicInteger> retrieved = new java.util.concurrent.ConcurrentHashMap<>();
         volatile boolean failRetrieve;
-        @Override public JsonNode retrieveCheckout(String sessionId) {
+        @Override public JsonNode retrieveCheckout(String sessionId, String accountId) {
             retrieved.computeIfAbsent(sessionId, k -> new AtomicInteger()).incrementAndGet();
             if (failRetrieve) throw new com.physicalchange.payment.PaymentException(502, "No se ha podido contactar con Stripe");
             try {
@@ -62,12 +68,29 @@ class StripePaymentFlowTest {
             } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         }
         int retrievedCount(String sessionId) { AtomicInteger n = retrieved.get(sessionId); return n == null ? 0 : n.get(); }
-        @Override public void expireCheckout(String sessionId) { expired.add(sessionId); }
-        @Override public void cancelSubscription(String id) { cancelled.add(id); }
-        @Override public String createPortalSession(String customerId, String returnUrl) { return "https://billing.stripe.com/p/session/" + customerId; }
+        @Override public void expireCheckout(String sessionId, String accountId) { expired.add(sessionId); }
+        @Override public void cancelSubscription(String id, String accountId) { cancelled.add(id); }
+        @Override public String createPortalSession(String customerId, String returnUrl, String accountId) { return "https://billing.stripe.com/p/session/" + customerId; }
         @Override public JsonNode verifyWebhook(byte[] payload, String header) {
             StripeSignature.verify(payload, header, SECRET, Clock.systemUTC());
             try { return json.readTree(payload); } catch (java.io.IOException e) { throw new InvalidSignatureException("Cuerpo no válido"); }
+        }
+        @Override public JsonNode verifyConnectWebhook(byte[] payload, String header) { return verifyWebhook(payload, header); }
+        @Override public String connectAuthorizeUrl(String state, String redirectUri) { return "https://connect.stripe.com/oauth/authorize?state=" + state; }
+        /** El código de OAuth "ok-X" devuelve la cuenta acct_X; cualquier otro código falla. */
+        @Override public String exchangeOAuthCode(String code) {
+            if (!code.startsWith("ok-")) throw new com.physicalchange.payment.PaymentException(502, "código rechazado");
+            return "acct_" + code.substring(3);
+        }
+        @Override public void deauthorize(String accountId) { deauthorized.add(accountId); }
+        @Override public String createExpressAccount(String email, String country) { return "acct_express_" + seq.incrementAndGet(); }
+        @Override public String accountLinkUrl(String accountId, String refreshUrl, String returnUrl) { return "https://connect.stripe.com/express/" + accountId; }
+        @Override public JsonNode retrieveAccount(String accountId) {
+            if (accountId.contains("fail")) throw new com.physicalchange.payment.PaymentException(502, "cuenta no disponible");
+            try {
+                return json.readTree(accounts.getOrDefault(accountId, "{\"id\":\"" + accountId + "\",\"charges_enabled\":true,\"payouts_enabled\":true,"
+                        + "\"details_submitted\":true,\"requirements\":{\"currently_due\":[]}}"));
+            } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         }
         String lastSession() { return "cs_test_" + seq.get(); }
     }
@@ -87,6 +110,7 @@ class StripePaymentFlowTest {
     @Autowired ObjectMapper json;
     @Autowired FakeStripe stripe;
     @Autowired com.physicalchange.service.StripeReconciler reconciler;
+    @Autowired TrainerStripeAccountRepository accountRepo;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private final LocalDate today = LocalDate.now();
@@ -99,9 +123,26 @@ class StripePaymentFlowTest {
         clientId = save("c-" + sfx + "@test", Role.CLIENT, trainerId).getId();
         Long otherTrainerId = save("ot-" + sfx + "@test", Role.TRAINER, null).getId();
         otherClientId = save("oc-" + sfx + "@test", Role.CLIENT, otherTrainerId).getId();
+        linkTrainer(trainerId);
         trainer = token(trainerId, Role.TRAINER);
         client = token(clientId, Role.CLIENT);
         otherClient = token(otherClientId, Role.CLIENT);
+    }
+
+    /** Cuenta Stripe activa para el profesional (ADR-018): sin ella no se puede cobrar. */
+    private void linkTrainer(Long id) {
+        TrainerStripeAccount a = new TrainerStripeAccount();
+        a.setTrainerId(id);
+        a.setStripeAccountId("acct_t_" + id);
+        a.setAccountType("STANDARD");
+        a.setStatus("ACTIVE");
+        a.setChargesEnabled(true);
+        a.setPayoutsEnabled(true);
+        a.setDetailsSubmitted(true);
+        a.setRequirementsDue("[]");
+        a.setLinkedAt(LocalDateTime.now());
+        a.setUpdatedAt(LocalDateTime.now());
+        accountRepo.save(a);
     }
 
     // ---------- Pagar un comprobante pendiente ----------
@@ -503,5 +544,235 @@ class StripePaymentFlowTest {
         if (body != null) req.content(body);
         String text = mvc.perform(req).andExpect(status().is(status)).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         return text.isBlank() ? null : json.readTree(text);
+    }
+
+    // ---------- ADR-018: cuenta Stripe por profesional y comisión por plan ----------
+
+    private long planWithFee(String price, String fee) throws Exception {
+        String body = "{\"name\":\"Con comisión\",\"description\":\"Descripción\",\"price\":" + price + ",\"taxRate\":21,\"cover\":\"brand\","
+                + "\"bonuses\":[],\"autoTagIds\":[],\"frequency\":\"MONTHLY\",\"visibility\":\"ALL\",\"platformFeePercent\":" + fee + "}";
+        return send("POST", "/api/subscription-plans", trainer, body, 201).get("id").asLong();
+    }
+
+    private JsonNode planOf(String auth, long planId) throws Exception {
+        for (JsonNode p : send("GET", "/api/me/plans", auth, null, 200)) if (p.get("id").asLong() == planId) return p;
+        throw new AssertionError("El plan " + planId + " no aparece en el catálogo del cliente");
+    }
+
+    /** El cliente paga precio + comisión; la comisión va a la plataforma vía application_fee y el cobro a la cuenta del profesional. */
+    @Test void cobroVaALaCuentaDelProfesionalYLaComisionLaPagaElCliente() throws Exception {
+        long plan = planWithFee("50", "21");
+        JsonNode mine = planOf(client, plan);
+        assertTrue(mine.get("payable").asBoolean());
+        assertEquals(0, new BigDecimal("10.50").compareTo(mine.get("feeAmount").decimalValue()));
+        assertEquals(0, new BigDecimal("60.50").compareTo(mine.get("totalPrice").decimalValue()));
+        send("POST", "/api/me/plans/" + plan + "/checkout", client, null, 201);
+        PaymentProvider.CheckoutRequest r = stripe.checkouts.get(stripe.checkouts.size() - 1);
+        assertEquals("acct_t_" + trainerId, r.accountId());
+        assertEquals(6050, r.amountCents());
+        assertEquals(1050, r.applicationFeeCents());
+        assertEquals(PaymentProvider.Mode.SUBSCRIPTION, r.mode());
+    }
+
+    /** Sin cuenta activa no hay cobro (ADR-018, punto 4); el plan sigue visible pero no se puede pagar. */
+    @Test void sinCuentaActivaNoSeCobra() throws Exception {
+        long receipt = pendingReceipt("30");
+        long plan = planWithFee("20", "10");
+        accountRepo.deleteById(trainerId);
+        send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 409);
+        send("POST", "/api/me/plans/" + plan + "/checkout", client, null, 409);
+        assertFalse(planOf(client, plan).get("payable").asBoolean());
+    }
+
+    /** El webhook de cuentas conectadas actualiza el estado; sin cargos habilitados no se cobra y al habilitarse sí. */
+    @Test void webhookDeCuentaActualizaElEstadoYSinCargosNoSeCobra() throws Exception {
+        String acct = "acct_t_" + trainerId;
+        String pending = accountEvent(acct, false, "[\"individual.verification.document\"]");
+        connectWebhook(pending, sign(pending), 200);
+        JsonNode st = send("GET", "/api/payments/stripe/account", trainer, null, 200);
+        assertEquals("PENDING_DETAILS", st.get("status").asText());
+        assertFalse(st.has("stripeAccountId"));                       // el id de cuenta nunca sale en la respuesta
+        assertEquals("individual.verification.document", st.get("requirementsDue").get(0).asText());
+        long receipt = pendingReceipt("30");
+        send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 409);
+        String ok = accountEvent(acct, true, "[]");
+        connectWebhook(ok, sign(ok), 200);
+        assertEquals("ACTIVE", send("GET", "/api/payments/stripe/account", trainer, null, 200).get("status").asText());
+        send("POST", "/api/me/receipts/" + receipt + "/checkout", client, null, 201);
+    }
+
+    /** Vinculación Standard por OAuth: state de un solo uso, cuenta única por profesional y vuelta con error. */
+    @Test void vinculacionStandardPorOAuthYErroresDeLaVuelta() throws Exception {
+        long t2 = save("t2-" + UUID.randomUUID().toString().substring(0, 8) + "@test", Role.TRAINER, null).getId();
+        String tok2 = token(t2, Role.TRAINER);
+        String state = linkState(tok2);
+        assertTrue(callback("ok-" + t2, state, null).contains("stripe=ok"));
+        JsonNode st = send("GET", "/api/payments/stripe/account", tok2, null, 200);
+        assertEquals("ACTIVE", st.get("status").asText());
+        assertEquals("STANDARD", st.get("accountType").asText());
+        assertFalse(st.has("stripeAccountId"));
+        send("POST", "/api/payments/stripe/account/link", tok2, "{\"accountType\":\"STANDARD\"}", 409);   // ya vinculada
+        assertTrue(callback("ok-" + t2, state, null).contains("motivo=state"));                           // el state ya se usó
+        assertTrue(callback("ok-x", "no-existe", null).contains("motivo=state"));
+        long t3 = save("t3-" + UUID.randomUUID().toString().substring(0, 8) + "@test", Role.TRAINER, null).getId();
+        String tok3 = token(t3, Role.TRAINER);
+        assertTrue(callback("ok-t_" + trainerId, linkState(tok3), null).contains("motivo=cuenta_en_uso")); // cuenta de otro profesional
+        assertTrue(callback("bad", linkState(tok3), null).contains("motivo=oauth"));
+        assertTrue(callback(null, linkState(tok3), "access_denied").contains("motivo=cancelado"));
+    }
+
+    /** Desvincular: con una suscripción activa en la cuenta se rechaza; cancelada, se revoca en Stripe y se desvincula. */
+    @Test void desvincularBloqueaConSuscripcionActivaYRevocaSinElla() throws Exception {
+        long plan = plan("Mensual " + UUID.randomUUID(), "49", "MONTHLY", "ALL");
+        send("POST", "/api/me/plans/" + plan + "/checkout", client, null, 201);
+        String subId = "sub_" + UUID.randomUUID();
+        String completed = sessionCompleted("evt_" + UUID.randomUUID(), stripe.lastSession(), 4900, "subscription")
+                .replace("\"subscription\":null", "\"subscription\":\"" + subId + "\"");
+        webhook(completed, sign(completed), 200);
+        send("DELETE", "/api/payments/stripe/account", trainer, null, 409);
+        long id = subscriptions.findByStripeSubscriptionId(subId).orElseThrow().getId();
+        send("POST", "/api/subscriptions/" + id + "/cancel", trainer, null, 200);
+        send("DELETE", "/api/payments/stripe/account", trainer, null, 204);
+        assertTrue(stripe.deauthorized.contains("acct_t_" + trainerId));
+        assertEquals("NOT_LINKED", send("GET", "/api/payments/stripe/account", trainer, null, 200).get("status").asText());
+    }
+
+    private String linkState(String auth) throws Exception {
+        String url = send("POST", "/api/payments/stripe/account/link", auth, "{\"accountType\":\"STANDARD\"}", 201).get("url").asText();
+        return url.substring(url.indexOf("state=") + 6);
+    }
+
+    /** Vuelve de Stripe; devuelve la URL de redirección (siempre 302, nunca JSON). */
+    private String callback(String code, String state, String error) throws Exception {
+        var req = get("/api/public/stripe/connect/callback").param("state", state);
+        if (code != null) req.param("code", code);
+        if (error != null) req.param("error", error);
+        return mvc.perform(req).andExpect(status().isFound()).andReturn().getResponse().getRedirectedUrl();
+    }
+
+    private String accountEvent(String acct, boolean charges, String due) {
+        return "{\"id\":\"evt_" + UUID.randomUUID() + "\",\"type\":\"account.updated\",\"account\":\"" + acct + "\",\"livemode\":false,"
+                + "\"data\":{\"object\":{\"id\":\"" + acct + "\",\"charges_enabled\":" + charges + ",\"payouts_enabled\":" + charges
+                + ",\"details_submitted\":true,\"requirements\":{\"currently_due\":" + due + "}}}}";
+    }
+
+    private void connectWebhook(String body, String signature, int status) throws Exception {
+        var req = post("/api/public/stripe/connect-webhook").contentType("application/json").content(bytes(body));
+        if (signature != null) req.header("Stripe-Signature", signature);
+        mvc.perform(req).andExpect(status().is(status));
+    }
+
+    // ---------- T282: QA y seguridad de la vinculación y los cobros (ADR-018) ----------
+
+    /** Un cliente solo ve y paga planes de su profesional: un plan ajeno responde 404 y no aparece en su catálogo. */
+    @Test void planAjenoNoSeContrataNiSeVe() throws Exception {
+        long otherTrainer = save("ot2-" + UUID.randomUUID().toString().substring(0, 8) + "@test", Role.TRAINER, null).getId();
+        linkTrainer(otherTrainer);
+        String body = "{\"name\":\"Ajeno\",\"description\":\"D\",\"price\":30,\"taxRate\":21,\"cover\":\"brand\",\"bonuses\":[],"
+                + "\"autoTagIds\":[],\"frequency\":\"MONTHLY\",\"visibility\":\"ALL\"}";
+        long foreign = send("POST", "/api/subscription-plans", token(otherTrainer, Role.TRAINER), body, 201).get("id").asLong();
+        send("POST", "/api/me/plans/" + foreign + "/checkout", client, null, 404);
+        for (JsonNode p : send("GET", "/api/me/plans", client, null, 200)) assertNotEquals(foreign, p.get("id").asLong());
+    }
+
+    /** Un cliente no accede a la cuenta de Stripe de ningún profesional (solo TRAINER y ADMIN). */
+    @Test void clienteNoAccedeALaCuentaDeStripe() throws Exception {
+        send("GET", "/api/payments/stripe/account", client, null, 403);
+        send("POST", "/api/payments/stripe/account/link", client, "{}", 403);
+        send("POST", "/api/payments/stripe/account/refresh", client, null, 403);
+        send("DELETE", "/api/payments/stripe/account", client, null, 403);
+    }
+
+    /** El cliente no elige cuenta ni comisión: el servidor las toma del plan y de la cuenta del profesional. */
+    @Test void elClienteNoPuedeElegirCuentaNiComision() throws Exception {
+        long plan = planWithFee("50", "21");
+        send("POST", "/api/me/plans/" + plan + "/checkout", client,
+                "{\"accountId\":\"acct_ajena\",\"trainerId\":" + otherClientId + ",\"platformFeePercent\":0,\"applicationFeeCents\":0}", 201);
+        PaymentProvider.CheckoutRequest r = stripe.checkouts.get(stripe.checkouts.size() - 1);
+        assertEquals("acct_t_" + trainerId, r.accountId());
+        assertEquals(1050, r.applicationFeeCents());
+        assertEquals(6050, r.amountCents());
+    }
+
+    /** El id de cuenta nunca sale en las respuestas de profesional ni de cliente. */
+    @Test void elIdDeCuentaNoSaleEnLasRespuestas() throws Exception {
+        long plan = planWithFee("50", "21");
+        pendingReceipt("10");
+        send("POST", "/api/me/plans/" + plan + "/checkout", client, null, 201);
+        List<String> bodies = List.of(
+                send("GET", "/api/payments/stripe/account", trainer, null, 200).toString(),
+                send("GET", "/api/payments/stripe/status", trainer, null, 200).toString(),
+                send("GET", "/api/me/plans", client, null, 200).toString(),
+                send("GET", "/api/me/orders", client, null, 200).toString(),
+                send("GET", "/api/me/subscriptions", client, null, 200).toString(),
+                send("POST", "/api/payments/stripe/account/refresh", trainer, null, 200).toString());
+        for (String b : bodies) assertFalse(b.contains("acct_t_" + trainerId), b);
+    }
+
+    /** Webhook de cuentas: firma incorrecta → 400 y nada cambia; evento de una cuenta desconocida → 200 y sin efecto. */
+    @Test void webhookDeCuentaNoVinculadaOFirmaMalaNoCambiaNada() throws Exception {
+        String ghost = "acct_ghost_" + UUID.randomUUID().toString().substring(0, 8);
+        String unknown = accountEvent(ghost, true, "[]");
+        connectWebhook(unknown, sign(unknown), 200);
+        assertFalse(accountRepo.findByStripeAccountId(ghost).isPresent());
+        String forged = accountEvent("acct_t_" + trainerId, false, "[]");
+        connectWebhook(forged, StripeSignature.sign(bytes(forged), "whsec_otro", now()), 400);
+        assertEquals("ACTIVE", accountRepo.findById(trainerId).orElseThrow().getStatus());
+        assertTrue(accountRepo.findById(trainerId).orElseThrow().isChargesEnabled());
+    }
+
+    /** Revocación desde Stripe: la cuenta se desvincula y las suscripciones activas pasan a impago para revisarlas. */
+    @Test void revocacionEnStripeDesvinculaYPasaSuscripcionesAImpago() throws Exception {
+        long subId = contratarPlanConSuscripcion();
+        String revoked = "{\"id\":\"evt_" + UUID.randomUUID() + "\",\"type\":\"account.application.deauthorized\",\"account\":\"acct_t_"
+                + trainerId + "\",\"livemode\":false,\"data\":{\"object\":{\"id\":\"ca_test\"}}}";
+        connectWebhook(revoked, sign(revoked), 200);
+        assertFalse(accountRepo.findById(trainerId).isPresent());
+        assertEquals("PAST_DUE", subscriptions.findById(subId).orElseThrow().getStatus());
+        assertEquals("NOT_LINKED", send("GET", "/api/payments/stripe/account", trainer, null, 200).get("status").asText());
+    }
+
+    /** Un impago (PAST_DUE) también bloquea desvincular: la suscripción sigue cobrándose en esa cuenta. */
+    @Test void impagoTambienBloqueaDesvincular() throws Exception {
+        long subId = contratarPlanConSuscripcion();
+        ClientSubscription s = subscriptions.findById(subId).orElseThrow();
+        s.setStatus("PAST_DUE");
+        subscriptions.save(s);
+        send("DELETE", "/api/payments/stripe/account", trainer, null, 409);
+    }
+
+    /** Comprobar el estado en Stripe admite 10 veces por hora (contrato): la 11.ª responde 429. */
+    @Test void comprobarEstadoTieneLimiteDeFrecuencia() throws Exception {
+        for (int i = 0; i < 10; i++) send("POST", "/api/payments/stripe/account/refresh", trainer, null, 200);
+        send("POST", "/api/payments/stripe/account/refresh", trainer, null, 429);
+    }
+
+    /** Crea un plan, lo contrata y completa el primer cobro por webhook: devuelve el id de la suscripción local. */
+    private long contratarPlanConSuscripcion() throws Exception {
+        long plan = plan("Mensual " + UUID.randomUUID(), "49", "MONTHLY", "ALL");
+        send("POST", "/api/me/plans/" + plan + "/checkout", client, null, 201);
+        String subId = "sub_" + UUID.randomUUID();
+        String completed = sessionCompleted("evt_" + UUID.randomUUID(), stripe.lastSession(), 4900, "subscription")
+                .replace("\"subscription\":null", "\"subscription\":\"" + subId + "\"");
+        webhook(completed, sign(completed), 200);
+        return subscriptions.findByStripeSubscriptionId(subId).orElseThrow().getId();
+    }
+
+    /** Vincular admite 10 intentos por hora y profesional: el siguiente responde 429 y no crea nada en Stripe. */
+    @Test void vincularTieneLimiteDeIntentos() throws Exception {
+        long t = save("lim-" + UUID.randomUUID().toString().substring(0, 8) + "@test", Role.TRAINER, null).getId();
+        String tok = token(t, Role.TRAINER);
+        for (int i = 0; i < 10; i++) send("POST", "/api/payments/stripe/account/link", tok, "{\"accountType\":\"STANDARD\"}", 201);
+        send("POST", "/api/payments/stripe/account/link", tok, "{\"accountType\":\"STANDARD\"}", 429);
+    }
+
+    /** Si Stripe concede la autorización pero no podemos leer la cuenta, se revoca: no queda autorizada una cuenta sin guardar. */
+    @Test void autorizacionSinCuentaLegibleSeRevoca() throws Exception {
+        long t = save("fail-" + UUID.randomUUID().toString().substring(0, 8) + "@test", Role.TRAINER, null).getId();
+        String tok = token(t, Role.TRAINER);
+        String state = linkState(tok);
+        assertTrue(callback("ok-fail-" + t, state, null).contains("motivo=oauth"));
+        assertTrue(stripe.deauthorized.contains("acct_fail-" + t));
+        assertEquals("NOT_LINKED", send("GET", "/api/payments/stripe/account", tok, null, 200).get("status").asText());
     }
 }

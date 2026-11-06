@@ -12,4 +12,6 @@ public class PaymentException extends RuntimeException {
     public int status() { return status; }
 
     public static PaymentException disabled() { return new PaymentException(503, "Los pagos no están activados"); }
+
+    public static PaymentException connectNotConfigured() { return new PaymentException(503, "La vinculación de cuentas de Stripe no está configurada"); }
 }

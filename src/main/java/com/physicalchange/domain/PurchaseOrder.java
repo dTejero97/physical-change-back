@@ -23,6 +23,8 @@ public class PurchaseOrder {
     @Column(nullable = false, length = 10) private String status = "PENDING";
     @Column(name = "STRIPE_SESSION_ID", unique = true, length = 255) private String stripeSessionId;
     @Column(name = "STRIPE_PAYMENT_INTENT", length = 255) private String stripePaymentIntent;
+    @Column(name = "STRIPE_ACCOUNT_ID", length = 255) private String stripeAccountId;
+    @Column(name = "PLATFORM_FEE_AMOUNT", nullable = false, precision = 10, scale = 2) private BigDecimal platformFeeAmount = BigDecimal.ZERO;
     @Column(name = "CREATED_AT", nullable = false) private LocalDateTime createdAt = LocalDateTime.now();
     @Column(name = "EXPIRES_AT", nullable = false) private LocalDateTime expiresAt;
     @Column(name = "PAID_AT") private LocalDateTime paidAt;
@@ -48,6 +50,10 @@ public class PurchaseOrder {
     public void setStripeSessionId(String s) { this.stripeSessionId = s; }
     public String getStripePaymentIntent() { return stripePaymentIntent; }
     public void setStripePaymentIntent(String p) { this.stripePaymentIntent = p; }
+    public String getStripeAccountId() { return stripeAccountId; }
+    public void setStripeAccountId(String s) { this.stripeAccountId = s; }
+    public BigDecimal getPlatformFeeAmount() { return platformFeeAmount; }
+    public void setPlatformFeeAmount(BigDecimal p) { this.platformFeeAmount = p; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getExpiresAt() { return expiresAt; }
     public void setExpiresAt(LocalDateTime e) { this.expiresAt = e; }

@@ -24,6 +24,8 @@ public enum AuditAction {
     RECEIPT_VOIDED("Comprobante anulado", "Dinero"),
     STRIPE_PAYMENT_CONFIRMED("Pago con tarjeta confirmado", "Dinero"),
     STRIPE_REFUND("Reembolso en Stripe", "Dinero"),
+    STRIPE_ACCOUNT_LINKED("Cuenta de Stripe vinculada", "Dinero"),
+    STRIPE_ACCOUNT_UNLINKED("Cuenta de Stripe desvinculada", "Dinero"),
     SUBSCRIPTION_STARTED("Suscripción iniciada", "Dinero"),
     SUBSCRIPTION_CANCELLED("Suscripción cancelada", "Dinero"),
 

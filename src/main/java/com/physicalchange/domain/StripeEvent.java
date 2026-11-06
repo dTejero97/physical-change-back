@@ -12,7 +12,10 @@ public class StripeEvent {
     @Column(name = "RECEIVED_AT", nullable = false) private LocalDateTime receivedAt = LocalDateTime.now();
 
     protected StripeEvent() {}
+    @Column(name = "ACCOUNT_ID", length = 255) private String accountId;
     public StripeEvent(String eventId, String type) { this.eventId = eventId; this.type = type; }
+    public StripeEvent(String eventId, String type, String accountId) { this(eventId, type); this.accountId = accountId; }
+    public String getAccountId() { return accountId; }
 
     public String getEventId() { return eventId; }
     public String getType() { return type; }
